@@ -214,7 +214,135 @@
   font-size: 0.95rem;
   line-height: 1.6;
   word-break: break-word;
-  white-space: pre-wrap;
+}
+
+/* 마크다운 서식화 메시지 스타일 */
+.formatted-message {
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.formatted-message > :first-child {
+  margin-top: 0 !important;
+}
+
+.formatted-message > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ### 제목 (h4): "### 보고 상황에서 자주 쓰는 고급 표현 3가지" 등 */
+.formatted-message .msg-heading-3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 12px 0 6px 0;
+  color: #1d4ed8;
+  line-height: 1.45;
+  border-left: 3px solid #2563eb;
+  padding-left: 8px;
+}
+
+/* ## 제목 (h3) */
+.formatted-message .msg-heading-2 {
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin: 14px 0 6px 0;
+  color: #1e3a8a;
+  line-height: 1.45;
+}
+
+/* # 제목 (h2) */
+.formatted-message .msg-heading-1 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 16px 0 8px 0;
+  color: #1e3a8a;
+  line-height: 1.4;
+}
+
+.formatted-message .msg-paragraph {
+  margin: 0;
+  min-height: 1.4em;
+}
+
+.formatted-message .msg-empty-line {
+  height: 8px;
+}
+
+/* **굵은 글씨**: "**변동 사항이 발생하는 대로 공유드리겠습니다**" */
+.formatted-message .msg-bold {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* 어시스턴트(AI) 말풍선 내의 볼드 텍스트: 선명한 네이비 블루로 가독성 강조 */
+.message-row.assistant .formatted-message .msg-bold {
+  font-weight: 700;
+  color: #1e3a8a;
+  background-color: rgba(37, 99, 235, 0.06);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+/* 사용자 말풍선 내의 볼드 텍스트 */
+.message-row.user .formatted-message {
+  color: #ffffff;
+}
+
+.message-row.user .formatted-message .msg-bold {
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.formatted-message .msg-code {
+  background-color: #f1f5f9;
+  color: #b91c1c;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.formatted-message .msg-bullet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 2px 4px;
+}
+
+.formatted-message .msg-bullet-dot {
+  color: #2563eb;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.formatted-message .msg-bullet-content {
+  flex: 1;
+}
+
+.formatted-message .msg-number-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0 2px 2px;
+}
+
+.formatted-message .msg-number-prefix {
+  font-weight: 700;
+  color: #2563eb;
+  min-width: 18px;
+  flex-shrink: 0;
+}
+
+.formatted-message .msg-number-content {
+  flex: 1;
+}
+
+.formatted-message .msg-divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 10px 0;
 }
 
 .message-row.user .message-bubble {

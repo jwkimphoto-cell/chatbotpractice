@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
+import { FormattedMessage } from './FormattedMessage';
 import './Chatbot.css';
 
 interface DisplayMessage extends ChatMessage {
@@ -293,10 +294,10 @@ export const Chatbot: React.FC = () => {
                   <span className="typing-dot" />
                 </span>
               ) : (
-                <>
-                  {msg.content}
-                  {msg.id === streamingId && <span className="streaming-cursor" />}
-                </>
+                <FormattedMessage
+                  content={msg.content}
+                  isStreaming={msg.id === streamingId}
+                />
               )}
             </div>
           </div>
