@@ -6,17 +6,16 @@ interface DisplayMessage extends ChatMessage {
   id: string;
 }
 
-const INITIAL_GREETING = `안녕하세요! 직장 한국어 연습 챗봇입니다. 💼
-보고, 회의, 비즈니스 이메일 등 다양한 직장 상황에서 상대와 맥락에 맞는 한국어 표현을 연습하고 맞춤 피드백을 받아보세요.
+const INITIAL_GREETING = `안녕하세요! 외국인 직장인을 위한 직장 한국어 연습 도우미입니다. 💼
+회의, 보고, 이메일 등 다양한 직장 상황에서 꼭 필요한 한국어 표현을 배우고 빈칸 채우기 퀴즈로 복습해 보세요.
 
-연습하고 싶으신 **직장 상황(보고·회의·이메일 등)**과 **난이도(초급/중급/고급)**를 말씀해 주시면 바로 실전 연습을 시작하겠습니다!`;
+연습하고 싶으신 **주제**와 **난이도(초급/중급/고급)**를 선택하시거나 직접 입력해 주시면 표현 3가지를 소개해 드립니다!`;
 
 /** 1단계: 주제 선택 목록 */
 const TOPIC_OPTIONS = [
-  { label: '📊 주간 회의', value: '주간 회의' },
-  { label: '📅 월간 회의', value: '월간 회의' },
-  { label: '📢 마케팅 회의', value: '마케팅 회의' },
-  { label: '🚀 신사업 회의', value: '신사업 회의' },
+  { label: '📊 보고', value: '보고' },
+  { label: '📧 이메일', value: '이메일' },
+  { label: '🤝 회의', value: '회의' },
 ];
 
 /** 2단계: 난이도 선택 목록 */
@@ -171,7 +170,7 @@ export const Chatbot: React.FC = () => {
   /** 2단계: 난이도 선택 → 메시지 전송 */
   const handleDifficultySelect = (difficultyValue: string) => {
     if (isLoading || !selectedTopic) return;
-    const prompt = `주제: ${selectedTopic}\n난이도: ${difficultyValue}\n위 조건에 맞는 회의 한국어 대화 연습을 시작해줘.`;
+    const prompt = `주제: ${selectedTopic}\n난이도: ${difficultyValue}\n위 조건에 맞는 직장 한국어 표현 연습을 시작해줘.`;
     setSelectedTopic(null);
     handleSendMessage(prompt);
   };
@@ -187,8 +186,8 @@ export const Chatbot: React.FC = () => {
       {/* 헤더 */}
       <header className="chatbot-header">
         <div className="chatbot-title-group">
-          <h2>💼 직장 한국어 연습 챗봇</h2>
-          <p>보고 · 회의 · 이메일 직장담화 롤플레잉 & 비즈니스 표현 피드백</p>
+          <h2>💼 직장 한국어 연습 도우미</h2>
+          <p>외국인 직장인을 위한 직장 한국어 표현 학습 & 빈칸 채우기 복습 퀴즈</p>
         </div>
         <div className="chatbot-header-actions">
           <span className="model-badge" title="OpenAI Responses API / reasoning.effort: none">
@@ -234,10 +233,11 @@ export const Chatbot: React.FC = () => {
               disabled={isLoading}
               title="주제 다시 선택"
             >
-              ←
+              ← 주제 다시 선택
             </button>
+            <span className="quick-topics-label">선택한 주제:</span>
             <span className="quick-chip quick-chip-selected">{selectedTopic}</span>
-            <span className="quick-topics-divider">›</span>
+            <span className="quick-topics-divider">|</span>
             <span className="quick-topics-label">난이도:</span>
             {DIFFICULTY_OPTIONS.map((diff, idx) => (
               <button
