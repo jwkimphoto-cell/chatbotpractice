@@ -161,9 +161,12 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
     }
   };
 
+  // 학습자가 한 번이라도 말해야 피드백 요청 가능 (발화 없이 피드백하면 없는 내용을 지어내게 됨)
+  const hasUserTurn = messages.some((m) => m.role === 'user');
+
   // [피드백 받기] 버튼 클릭
   const handleRequestFeedback = () => {
-    if (isLoading) return;
+    if (isLoading || !hasUserTurn) return;
     handleSendMessage('[피드백 요청] 대화를 마치고 피드백을 주세요.');
   };
 
@@ -449,7 +452,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
                 type="button"
                 className="feedback-trigger-btn"
                 onClick={handleRequestFeedback}
-                disabled={isLoading}
+                disabled={isLoading || !hasUserTurn}
                 title="현재까지의 대화를 바탕으로 피드백을 받습니다."
               >
                 피드백 받기

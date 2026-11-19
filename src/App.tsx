@@ -23,6 +23,12 @@ export function App() {
     setDueCardsCount(getDueCardsCount());
   }, []);
 
+  // 탭을 바꿀 때마다 ●N을 다시 계산 (앱을 오래 켜 둔 사이 복습일이 지난 카드 반영)
+  const switchTab = (tab: AppTab) => {
+    setActiveTab(tab);
+    updateDueCount();
+  };
+
   // 헤더의 "대화 초기화" 버튼은 현재 활성화된 탭만 초기화
   const handleResetCurrentTab = () => {
     if (isStreaming) return;
@@ -69,7 +75,7 @@ export function App() {
           <button
             type="button"
             className={`tab-nav-btn ${activeTab === 'expression' ? 'active' : ''}`}
-            onClick={() => setActiveTab('expression')}
+            onClick={() => switchTab('expression')}
             disabled={isStreaming}
           >
             표현 연습
@@ -77,7 +83,7 @@ export function App() {
           <button
             type="button"
             className={`tab-nav-btn ${activeTab === 'roleplay' ? 'active' : ''}`}
-            onClick={() => setActiveTab('roleplay')}
+            onClick={() => switchTab('roleplay')}
             disabled={isStreaming}
           >
             상황 롤플레이
@@ -85,7 +91,7 @@ export function App() {
           <button
             type="button"
             className={`tab-nav-btn ${activeTab === 'email' ? 'active' : ''}`}
-            onClick={() => setActiveTab('email')}
+            onClick={() => switchTab('email')}
             disabled={isStreaming}
           >
             이메일 첨삭
@@ -93,10 +99,7 @@ export function App() {
           <button
             type="button"
             className={`tab-nav-btn ${activeTab === 'notes' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('notes');
-              updateDueCount();
-            }}
+            onClick={() => switchTab('notes')}
             disabled={isStreaming}
           >
             나의 표현 노트
@@ -133,10 +136,8 @@ export function App() {
           <div style={{ display: activeTab === 'notes' ? 'flex' : 'none', height: '100%' }}>
             <ExpressionNotes
               onStreamingChange={setIsStreaming}
-              onNavigateTab={(tabKey) => {
-                setActiveTab(tabKey);
-                updateDueCount();
-              }}
+              isActive={activeTab === 'notes'}
+              onNavigateTab={switchTab}
               onNotesCountChange={(count) => setDueCardsCount(count)}
             />
           </div>

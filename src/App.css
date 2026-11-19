@@ -158,12 +158,23 @@
     justify-content: space-between;
   }
 
+  /* 375px에서 탭 4개(●N 배지 포함)가 가로 스크롤 없이 한 줄에 들어가도록 */
   .app-tab-nav {
-    padding: 0 8px;
+    padding: 0;
+    gap: 0;
   }
 
   .tab-nav-btn {
-    padding: 10px 12px;
-    font-size: 0.84rem;
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 3px;
+    padding: 10px 5px;
+    font-size: 0.78rem;
+    letter-spacing: -0.02em;
+  }
+
+  .tab-due-badge {
+    padding: 1px 4px;
+    font-size: 0.68rem;
   }
 }

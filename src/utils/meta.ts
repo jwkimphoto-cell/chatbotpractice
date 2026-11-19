@@ -36,7 +36,7 @@ export function cleanDisplayContent(text: string): string {
 
   // 2. 스트리밍 중 마커의 일부(접두사)가 문자열 끝에 붙어 있는 경우 숨김
   // 가능한 접두사 패턴: [[N, [[NO, [[NOT, [[NOTE, [[NOTES, [[NOTES], [[R, [[RE, [[RES, [[RESU, [[RESUL, [[RESULT, [[RESULT], [[
-  const partialMarkerRegex = /\[\[(?:N(?:O(?:T(?:E(?:S(?:\])?)?)?)?)?|R(?:E(?:S(?:U(?:L(?:T(?:\])?)?)?)?)?)?)?$/;
+  const partialMarkerRegex = /\[(?:\[(?:N(?:O(?:T(?:E(?:S(?:\])?)?)?)?)?|R(?:E(?:S(?:U(?:L(?:T(?:\])?)?)?)?)?)?)?)?$/;
   return text.replace(partialMarkerRegex, '').trimEnd();
 }
 
@@ -48,6 +48,8 @@ export function stripMetaForHistory(text: string): string {
   return text
     .replace(/\[\[NOTES\]\][\s\S]*?\[\[\/NOTES\]\]/g, '')
     .replace(/\[\[RESULT\]\][\s\S]*?\[\[\/RESULT\]\]/g, '')
+    // 닫는 마커 없이 잘린 메타 블록은 시작 마커부터 끝까지 제거
+    .replace(/\[\[(?:NOTES|RESULT)\]\][\s\S]*$/, '')
     .trim();
 }
 

@@ -11,12 +11,15 @@ import {
 import { FormattedMessage } from './FormattedMessage';
 
 interface ExpressionNotesProps {
+  /** 노트 탭이 화면에 보이는지 여부 (보일 때마다 localStorage에서 목록을 다시 읽음) */
+  isActive?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
   onNavigateTab?: (tabKey: 'expression' | 'roleplay' | 'email') => void;
   onNotesCountChange?: (count: number) => void;
 }
 
 export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
+  isActive = false,
   onStreamingChange,
   onNavigateTab,
   onNotesCountChange,
@@ -51,6 +54,14 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
     const due = getDueCards().length;
     onNotesCountChange?.(due);
   }, [onNotesCountChange]);
+
+  // 다른 탭(롤플레이·이메일)에서 저장한 카드가 바로 보이도록, 탭이 열릴 때마다 목록 갱신
+  // (●N 배지는 App의 탭 전환 핸들러가 갱신)
+  const [wasActive, setWasActive] = useState(isActive);
+  if (isActive !== wasActive) {
+    setWasActive(isActive);
+    if (isActive) setNotes(loadNotes());
+  }
 
   const totalCount = notes.length;
   const dueCount = getDueCards().length;
@@ -168,9 +179,10 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
     }
   };
 
-  // 세션 종료 후 다음 복습일 계산 (복습한 카드들 중 가장 빠른 다음 복습일)
+  // 세션 종료 후 다음 복습일 계산 (이번에 복습한 카드들 중 가장 빠른 다음 복습일)
   const getNextEarliestReviewDate = () => {
-    const list = loadNotes();
+    const reviewedIds = new Set(reviewCards.map((c) => c.id));
+    const list = loadNotes().filter((c) => reviewedIds.has(c.id));
     if (list.length === 0) return '없음';
     const dates = list.map((c) => new Date(c.nextReviewAt).getTime()).sort((a, b) => a - b);
     return formatDate(new Date(dates[0]).toISOString());
@@ -207,8 +219,9 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
                 <div className="quiz-q-title">Q. 아래 표현을 상황에 더 알맞게 고쳐 써 보세요.</div>
                 <div className="quiz-original-quote">"{currentCard.original}"</div>
                 <div className="quiz-hint-text">
-                  💡 <strong>힌트:</strong> [{currentCard.category}]을(를) 생각해 보세요.
+                  💡 <strong>힌트:</strong> {currentCard.category}을(를) 생각해 보세요.
                 </div>
+                <div className="quiz-q-title">답을 입력해 보세요.</div>
               </div>
 
               {/* 답변 입력창 및 제출 버튼 */}
@@ -221,6 +234,8 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
                     value={userAnswer}
                     onChange={(e) => setUserAnswer(e.target.value)}
                     onKeyDown={(e) => {
+                      // 한글 IME 조합 중 Enter로 덜 입력된 답이 제출되지 않도록 방지
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === 'Enter') {
                         handleSubmitAnswer();
                       }
@@ -254,7 +269,7 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
                       className="reveal-answer-btn"
                       onClick={() => setIsAnswerRevealed(true)}
                     >
-                      모범 표현 보기
+                      정답 보기
                     </button>
                   ) : (
                     <div className="revealed-answer-area">
@@ -447,6 +462,12 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+          ) : totalCount > 0 ? (
+            /* 카드는 있지만 필터 조건에 맞는 카드가 없을 때 */
+            <div className="notes-empty-box">
+              <h4>조건에 맞는 카드가 없습니다.</h4>
+              <p>출처나 범주 필터를 바꿔 보세요.</p>
             </div>
           ) : (
             /* 카드가 없을 때 안내 */

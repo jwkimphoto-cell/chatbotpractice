@@ -71,7 +71,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mode === 'expression') {
       instructions = WORKPLACE_KOREAN_SYSTEM_PROMPT;
     } else if (mode === 'roleplay') {
-      if (!sceneId || !SERVER_SCENES[sceneId]) {
+      // Object.hasOwn: 'toString', '__proto__' 같은 프로토타입 키가 통과하지 않도록 검사
+      if (typeof sceneId !== 'string' || !Object.hasOwn(SERVER_SCENES, sceneId)) {
         return res.status(400).json({ error: '유효한 장면(sceneId)을 선택해 주세요.' });
       }
       instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId]);

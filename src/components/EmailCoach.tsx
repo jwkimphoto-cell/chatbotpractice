@@ -130,6 +130,7 @@ ${trimmedBody}`;
     setMessages([userMessage, assistantPlaceholder]);
     setStreamingId(assistantId);
 
+    let receivedAny = false;
     try {
       const apiPayload: ChatMessage[] = [
         { role: 'user', content: emailRequestText },
@@ -137,7 +138,10 @@ ${trimmedBody}`;
 
       const reply = await streamChatMessage(
         apiPayload,
-        (chunk) => appendDelta(assistantId, chunk),
+        (chunk) => {
+          receivedAny = true;
+          appendDelta(assistantId, chunk);
+        },
         { mode: 'email' },
       );
 
@@ -151,13 +155,11 @@ ${trimmedBody}`;
       const msg = error instanceof Error ? error.message : '이메일 첨삭 요청에 실패했습니다.';
       setErrorMessage(msg);
 
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.id === assistantId && last.content === '') {
-          return prev.slice(0, -1);
-        }
-        return prev;
-      });
+      if (!receivedAny) {
+        // 응답을 하나도 받지 못했으면 작성 내용을 유지한 채 폼으로 돌아가 다시 시도할 수 있게 함
+        setMessages([]);
+        setHasSubmitted(false);
+      }
     } finally {
       setIsLoading(false);
       setStreamingId(null);
@@ -212,10 +214,12 @@ ${trimmedBody}`;
 
       const notes = extractNotes(reply);
       if (notes.length > 0) {
+        // 새 노트의 체크박스 번호는 기존 노트 개수 뒤에서 시작 (선택 개수 기준이 아님)
+        const baseIndex = feedbackNotes.length;
         setFeedbackNotes((prev) => [...prev, ...notes]);
         setSelectedNoteIndices((prev) => {
           const next = new Set(prev);
-          notes.forEach((_, idx) => next.add(prev.size + idx));
+          notes.forEach((_, idx) => next.add(baseIndex + idx));
           return next;
         });
       }

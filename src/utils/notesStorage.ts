@@ -30,6 +30,26 @@ function calculateNextReviewDate(box: number, baseDate: Date = new Date()): Date
   return nextDate;
 }
 
+function isValidCard(c: unknown): c is NoteCard {
+  if (!c || typeof c !== 'object') return false;
+  const card = c as Record<string, unknown>;
+  return (
+    typeof card.id === 'string' &&
+    typeof card.original === 'string' &&
+    typeof card.corrected === 'string' &&
+    typeof card.nextReviewAt === 'string' &&
+    typeof card.box === 'number' &&
+    typeof card.reviewCount === 'number'
+  );
+}
+
+/** 오늘(로컬 시간) 하루의 끝. 다음 복습일이 오늘 날짜 이내면 "오늘 복습" 대상 */
+function endOfDay(date: Date): Date {
+  const d = new Date(date.getTime());
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 export function loadNotes(): NoteCard[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -37,7 +57,8 @@ export function loadNotes(): NoteCard[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed;
+      // 손상된 항목이 있어도 화면이 깨지지 않도록 필수 필드가 있는 카드만 사용
+      return parsed.filter(isValidCard);
     }
     return [];
   } catch {
@@ -101,7 +122,8 @@ export function addNotes(items: NewNoteInput[]): number {
  */
 export function getDueCards(today: Date = new Date()): NoteCard[] {
   const cards = loadNotes();
-  const nowTime = today.getTime();
+  // 복습 간격은 "일" 단위이므로 시각이 아니라 날짜로 비교
+  const nowTime = endOfDay(today).getTime();
   return cards.filter((card) => {
     const reviewTime = new Date(card.nextReviewAt).getTime();
     return reviewTime <= nowTime;

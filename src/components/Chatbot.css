@@ -1697,6 +1697,53 @@
     gap: 6px;
   }
 
+  /* 좁은 폭에서는 요약 정보가 잘리지 않도록 줄바꿈 허용 */
+  .summary-left {
+    flex-wrap: wrap;
+    white-space: normal;
+    row-gap: 2px;
+  }
+
+  /* 입력줄(입력창 + 전송 + 피드백 받기)이 375px에서도 넘치지 않도록 여백 축소 */
+  .input-form-container {
+    padding: 12px;
+  }
+
+  .input-form {
+    gap: 8px;
+  }
+
+  .chat-textarea {
+    min-width: 0;
+    padding: 12px;
+  }
+
+  .send-button {
+    padding: 0 14px;
+  }
+
+  .feedback-trigger-btn {
+    padding: 0 10px;
+    font-size: 0.82rem;
+  }
+
+  .input-hint {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* 범주 필터 칩이 가로로 숨지 않고 줄바꿈되도록 */
+  .notes-filter-bar {
+    padding: 8px 14px;
+  }
+
+  .filter-group {
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-x: visible;
+    row-gap: 4px;
+  }
+
   .roleplay-select-pane,
   .roleplay-diff-pane,
   .email-form-pane,
