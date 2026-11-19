@@ -109,11 +109,27 @@ export function extractNotes(text: string): ParsedNoteItem[] {
 }
 
 /**
- * 응답 텍스트에서 [[RESULT]] ... [[/RESULT]] 블록을 추출하여 채점 결과를 반환
+ * "결과:" 줄에서 판정을 읽습니다. ([[RESULT]] 블록이 빠졌을 때의 대신 읽기용)
+ * 공백을 지운 뒤 비교하며, 짧은 문구가 긴 문구에 포함되므로 반드시 긴 문구부터 확인합니다.
+ *   "✅ 정답(다른 적절한 표현)" → alternative  (← "✅ 정답"보다 먼저 확인)
+ *   "🟡 부분 정답"              → partial      (← "정답"을 포함하므로 correct보다 먼저 확인)
+ *   "❌ 오답"                   → incorrect
+ *   "✅ 정답"                   → correct
  */
-export function extractResult(text: string): ParsedResult | null {
+export function verdictFromResultLine(text: string): ReviewVerdict | null {
   if (!text) return null;
+  const line = text.match(/^\s*결과\s*[:：](.*)$/m);
+  if (!line) return null;
+  const v = line[1].replace(/\s+/g, '');
+  if (!v) return null;
+  if (v.includes('정답(다른적절한표현)')) return 'alternative';
+  if (v.includes('🟡') || v.includes('부분정답')) return 'partial';
+  if (v.includes('❌') || v.includes('오답') || v.includes('아쉬워요')) return 'incorrect';
+  if (v.includes('✅') || v.includes('정답')) return 'correct';
+  return null;
+}
 
+function parseResultBlock(text: string): ParsedResult | null {
   const match = text.match(/\[\[RESULT\]\]([\s\S]*?)\[\[\/RESULT\]\]/);
   if (!match || !match[1]) return null;
 
@@ -133,4 +149,26 @@ export function extractResult(text: string): ParsedResult | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 응답 텍스트에서 채점 결과를 반환합니다.
+ * 1) [[RESULT]] 블록을 우선 사용
+ * 2) 블록이 없거나 잘못됐으면 "결과:" 줄로 대신 읽고 console.warn으로 기록 (누락 빈도 확인용)
+ * 3) 둘 다 실패하면 null → 화면에서 자기 채점으로 전환
+ */
+export function extractResult(text: string): ParsedResult | null {
+  if (!text) return null;
+
+  const fromBlock = parseResultBlock(text);
+  if (fromBlock) return fromBlock;
+
+  const verdict = verdictFromResultLine(text);
+  if (verdict) {
+    console.warn(
+      `[extractResult] [[RESULT]] 블록이 없거나 잘못되어 "결과:" 줄로 판정을 대신 읽었습니다 (verdict: ${verdict}).`,
+    );
+    return { verdict, correct: isPassingVerdict(verdict) };
+  }
+  return null;
 }
