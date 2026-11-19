@@ -1,9 +1,9 @@
-import type { NoteCategory } from './meta';
+import { isPassingVerdict, type NoteCategory, type ReviewVerdict } from './meta';
 
 export interface NoteCard {
   id: string;
   createdAt: string; // ISO 날짜
-  source: 'roleplay' | 'email';
+  source: 'roleplay' | 'email' | 'expression';
   scene: string;
   counterpart: string;
   original: string;
@@ -13,7 +13,8 @@ export interface NoteCard {
   box: number; // 0 ~ 4
   nextReviewAt: string; // ISO 날짜
   reviewCount: number;
-  lastResult?: 'correct' | 'incorrect';
+  /** 'partial'은 4단계 채점 도입 후 추가. 기존 카드의 'correct'·'incorrect'도 그대로 읽힘 */
+  lastResult?: 'correct' | 'partial' | 'incorrect';
 }
 
 const STORAGE_KEY = 'officeKoreanCoach.notes.v1';
@@ -138,9 +139,12 @@ export function getDueCardsCount(today: Date = new Date()): number {
 }
 
 /**
- * 복습 결과(정답/오답)에 따라 카드의 박스와 다음 복습일을 갱신합니다.
+ * 복습 결과(4단계 판정)에 따라 카드의 박스와 다음 복습일을 갱신합니다.
+ * - correct·alternative → box +1 (최대 4)
+ * - partial → box 유지, 다음 복습은 1일 뒤
+ * - incorrect → box 0, 다음 복습은 1일 뒤
  */
-export function recordReviewResult(id: string, isCorrect: boolean): NoteCard | null {
+export function recordReviewResult(id: string, verdict: ReviewVerdict): NoteCard | null {
   const cards = loadNotes();
   const idx = cards.findIndex((c) => c.id === id);
   if (idx === -1) return null;
@@ -148,21 +152,26 @@ export function recordReviewResult(id: string, isCorrect: boolean): NoteCard | n
   const card = cards[idx];
   const now = new Date();
 
-  let nextBox = 0;
-  if (isCorrect) {
+  const passed = isPassingVerdict(verdict);
+  let nextBox: number;
+  let nextReviewDate: Date;
+  if (passed) {
     nextBox = Math.min(card.box + 1, 4);
+    nextReviewDate = calculateNextReviewDate(nextBox, now);
+  } else if (verdict === 'partial') {
+    nextBox = card.box;
+    nextReviewDate = calculateNextReviewDate(0, now); // 1일 뒤
   } else {
     nextBox = 0;
+    nextReviewDate = calculateNextReviewDate(0, now); // 1일 뒤
   }
-
-  const nextReviewDate = calculateNextReviewDate(nextBox, now);
 
   const updated: NoteCard = {
     ...card,
     box: nextBox,
     nextReviewAt: nextReviewDate.toISOString(),
     reviewCount: card.reviewCount + 1,
-    lastResult: isCorrect ? 'correct' : 'incorrect',
+    lastResult: passed ? 'correct' : verdict === 'partial' ? 'partial' : 'incorrect',
   };
 
   cards[idx] = updated;

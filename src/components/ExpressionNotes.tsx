@@ -1,6 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
-import { cleanDisplayContent, extractResult, type NoteCategory } from '../utils/meta';
+import {
+  cleanDisplayContent,
+  extractResult,
+  isPassingVerdict,
+  type NoteCategory,
+  type ParsedResult,
+  type ReviewVerdict,
+} from '../utils/meta';
 import {
   loadNotes,
   deleteNote,
@@ -18,6 +25,13 @@ interface ExpressionNotesProps {
   onNotesCountChange?: (count: number) => void;
 }
 
+const SOURCE_LABELS = {
+  전체: '전체',
+  expression: '표현 연습',
+  roleplay: '롤플레이',
+  email: '이메일',
+} as const;
+
 export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
   isActive = false,
   onStreamingChange,
@@ -25,7 +39,7 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
   onNotesCountChange,
 }) => {
   const [notes, setNotes] = useState<NoteCard[]>(() => loadNotes());
-  const [sourceFilter, setSourceFilter] = useState<'전체' | 'roleplay' | 'email'>('전체');
+  const [sourceFilter, setSourceFilter] = useState<'전체' | 'roleplay' | 'email' | 'expression'>('전체');
   const [categoryFilter, setCategoryFilter] = useState<'전체' | NoteCategory>('전체');
 
   // 인라인 삭제 확인 상태
@@ -40,12 +54,12 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
   // 퀴즈 채점 상태
   const [isGrading, setIsGrading] = useState<boolean>(false);
   const [gradeResponse, setGradeResponse] = useState<string>('');
-  const [gradeResultObj, setGradeResultObj] = useState<{ correct: boolean } | null>(null);
+  const [gradeResultObj, setGradeResultObj] = useState<ParsedResult | null>(null);
   const [isSelfGradeMode, setIsSelfGradeMode] = useState<boolean>(false);
   const [isAnswerRevealed, setIsAnswerRevealed] = useState<boolean>(false);
 
   // 세션 결과 통계
-  const [sessionResults, setSessionResults] = useState<boolean[]>([]);
+  const [sessionResults, setSessionResults] = useState<ReviewVerdict[]>([]);
   const [isSessionFinished, setIsSessionFinished] = useState<boolean>(false);
 
   const refreshNotes = useCallback(() => {
@@ -122,8 +136,8 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
       const result = extractResult(reply);
       if (result) {
         setGradeResultObj(result);
-        recordReviewResult(currentCard.id, result.correct);
-        setSessionResults((prev) => [...prev, result.correct]);
+        recordReviewResult(currentCard.id, result.verdict);
+        setSessionResults((prev) => [...prev, result.verdict]);
         refreshNotes();
       } else {
         // RESULT 파싱 실패 시 자기 채점 폴백 모드 전환
@@ -140,14 +154,19 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
     }
   };
 
-  // 자기 채점 버튼 핸들러 (맞혔어요 / 다시 볼래요)
-  const handleSelfGrade = (isCorrect: boolean) => {
+  // 자기 채점 버튼 핸들러 (맞혔어요=alternative / 거의 맞혔어요=partial / 다시 볼래요=incorrect)
+  const handleSelfGrade = (verdict: ReviewVerdict) => {
     if (!currentCard) return;
-    recordReviewResult(currentCard.id, isCorrect);
-    setSessionResults((prev) => [...prev, isCorrect]);
-    setGradeResultObj({ correct: isCorrect });
+    recordReviewResult(currentCard.id, verdict);
+    setSessionResults((prev) => [...prev, verdict]);
+    setGradeResultObj({ verdict, correct: isPassingVerdict(verdict) });
     refreshNotes();
   };
+
+  // 세션 요약: 정답(두 종류의 ✅ 합산) · 부분 정답 · 오답
+  const passedCount = sessionResults.filter(isPassingVerdict).length;
+  const partialCount = sessionResults.filter((v) => v === 'partial').length;
+  const incorrectCount = sessionResults.filter((v) => v === 'incorrect').length;
 
   // 다음 카드 이동
   const handleNextCard = () => {
@@ -282,14 +301,21 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
                         <button
                           type="button"
                           className="self-grade-btn correct"
-                          onClick={() => handleSelfGrade(true)}
+                          onClick={() => handleSelfGrade('alternative')}
                         >
                           ✓ 맞혔어요
                         </button>
                         <button
                           type="button"
+                          className="self-grade-btn partial"
+                          onClick={() => handleSelfGrade('partial')}
+                        >
+                          △ 거의 맞혔어요
+                        </button>
+                        <button
+                          type="button"
                           className="self-grade-btn incorrect"
-                          onClick={() => handleSelfGrade(false)}
+                          onClick={() => handleSelfGrade('incorrect')}
                         >
                           ✕ 다시 볼래요
                         </button>
@@ -315,16 +341,14 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
               <h3>오늘의 복습을 모두 완료했습니다!</h3>
               <div className="session-stat-card">
                 <div className="stat-highlight">
-                  <span>{reviewCards.length}장 중 </span>
-                  <strong className="correct-count">
-                    {sessionResults.filter(Boolean).length}장
-                  </strong>
-                  <span> 정답</span>
+                  <span>{reviewCards.length}장 중 정답 </span>
+                  <strong className="correct-count">{passedCount}</strong>
+                  <span> · 부분 정답 {partialCount} · 오답 {incorrectCount}</span>
                 </div>
                 <div className="stat-next-date">다음 복습: {getNextEarliestReviewDate()}</div>
               </div>
               <p className="summary-desc">
-                라이트너 복습 주기에 따라 맞힌 카드는 더 긴 간격 뒤에 다시 등장합니다.
+                맞힌 카드는 더 긴 간격 뒤에, 부분 정답·오답 카드는 내일 다시 등장합니다.
               </p>
               <button
                 type="button"
@@ -371,14 +395,14 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
           <div className="notes-filter-bar">
             <div className="filter-group">
               <span className="filter-label">출처:</span>
-              {(['전체', 'roleplay', 'email'] as const).map((src) => (
+              {(['전체', 'expression', 'roleplay', 'email'] as const).map((src) => (
                 <button
                   key={src}
                   type="button"
                   className={`filter-chip ${sourceFilter === src ? 'active' : ''}`}
                   onClick={() => setSourceFilter(src)}
                 >
-                  {src === '전체' ? '전체' : src === 'roleplay' ? '롤플레이' : '이메일'}
+                  {SOURCE_LABELS[src]}
                 </button>
               ))}
             </div>

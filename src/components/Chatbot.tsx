@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
 import { FormattedMessage } from './FormattedMessage';
+import { cleanDisplayContent, extractNotes, stripMetaForHistory, type ParsedNoteItem } from '../utils/meta';
+import { addNotes } from '../utils/notesStorage';
 import './Chatbot.css';
 
 interface DisplayMessage extends ChatMessage {
@@ -10,6 +12,7 @@ interface DisplayMessage extends ChatMessage {
 interface ChatbotProps {
   hideHeader?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
+  onNotesSaved?: () => void;
 }
 
 const INITIAL_GREETING = `안녕하세요! 외국인 직장인을 위한 직장 한국어 연습 도우미입니다. 💼
@@ -24,6 +27,12 @@ const TOPIC_OPTIONS = [
   { label: '🤝 회의', value: '회의' },
 ];
 
+/** 첫 표현 소개 이후 입력창 위에 보이는 빠른 응답 (누르면 명령어를 그대로 전송) */
+const QUICK_REPLIES = [
+  { label: '📝 퀴즈 시작', value: '퀴즈 시작' },
+  { label: '➕ 다른 표현 더 보기', value: '다른 표현' },
+];
+
 /** 2단계: 난이도 선택 목록 */
 const DIFFICULTY_OPTIONS = [
   { label: '🟢 초급', value: '초급' },
@@ -34,6 +43,7 @@ const DIFFICULTY_OPTIONS = [
 export const Chatbot: React.FC<ChatbotProps> = ({
   hideHeader = false,
   onStreamingChange,
+  onNotesSaved,
 }) => {
   const [messages, setMessages] = useState<DisplayMessage[]>([
     {
@@ -51,6 +61,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({
 
   /** 2단계 추천 선택 상태: 선택된 주제 (null이면 1단계=주제 선택) */
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+
+  /** 채점이 🟡/❌일 때 응답 끝 [[NOTES]]에서 추출한 표현 노트 후보 */
+  const [feedbackNotes, setFeedbackNotes] = useState<ParsedNoteItem[]>([]);
+  const [selectedNoteIndices, setSelectedNoteIndices] = useState<Set<number>>(new Set());
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,6 +86,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     setErrorMessage(null);
     setInput('');
     setSelectedTopic(null);
+    setFeedbackNotes([]);
+    setSelectedNoteIndices(new Set());
+    setSaveSuccessMessage(null);
   }, [isLoading]);
 
   useEffect(() => {
@@ -97,6 +115,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     if (!trimmed || isLoading) return;
 
     setErrorMessage(null);
+    setSaveSuccessMessage(null);
 
     const userMessage: DisplayMessage = {
       id: `user-${Date.now()}`,
@@ -127,15 +146,22 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     setStreamingId(assistantId);
 
     try {
-      // API 전송용 메시지 목록 (role과 content만 전달, placeholder 제외)
+      // API 전송용 메시지 목록 (role과 content만 전달, placeholder 제외, 메타 블록 제거)
       const apiPayload: ChatMessage[] = newMessages.map((m) => ({
         role: m.role,
-        content: m.content,
+        content: stripMetaForHistory(m.content),
       }));
 
-      await streamChatMessage(apiPayload, (chunk) => {
+      const reply = await streamChatMessage(apiPayload, (chunk) => {
         appendDelta(assistantId, chunk);
       });
+
+      // 🟡 부분 정답·❌ 오답 채점에만 붙는 [[NOTES]] → 저장 후보로 표시 (자동 저장 안 함)
+      const extracted = extractNotes(reply);
+      if (extracted.length > 0) {
+        setFeedbackNotes(extracted);
+        setSelectedNoteIndices(new Set(extracted.map((_, i) => i)));
+      }
     } catch (error: unknown) {
       console.error('Chat error:', error);
       const msg = error instanceof Error ? error.message : '메시지 전송에 실패했습니다.';
@@ -185,6 +211,45 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     setSelectedTopic(null);
     handleSendMessage(prompt);
   };
+
+  const handleToggleNote = (index: number) => {
+    setSelectedNoteIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveSelectedNotes = () => {
+    if (feedbackNotes.length === 0 || selectedNoteIndices.size === 0) return;
+    const itemsToSave = feedbackNotes
+      .filter((_, idx) => selectedNoteIndices.has(idx))
+      .map((item) => ({
+        source: 'expression' as const,
+        scene: item.scene || '표현 연습',
+        counterpart: item.counterpart || '상대',
+        original: item.original,
+        corrected: item.corrected,
+        category: item.category,
+        reason: item.reason,
+      }));
+    const savedCount = addNotes(itemsToSave);
+    setSaveSuccessMessage(`표현 노트에 ${savedCount}개 저장했어요.`);
+    onNotesSaved?.();
+  };
+
+  /** 첫 표현 소개 응답이 끝난 뒤부터 빠른 응답 버튼 표시 (초기 인사말·스트리밍 중인 첫 응답은 제외) */
+  const hasIntroduced = messages.some(
+    (m) =>
+      m.role === 'assistant' &&
+      !m.id.startsWith('init-') &&
+      m.id !== streamingId &&
+      m.content.trim() !== '',
+  );
 
   /** 주제 선택 되돌리기 */
   const handleTopicBack = () => {
@@ -292,31 +357,93 @@ export const Chatbot: React.FC<ChatbotProps> = ({
 
       {/* 메시지 스크롤 영역 */}
       <div className="messages-container">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`message-row ${msg.role}`}>
-            <div className="message-avatar">
-              {msg.role === 'user' ? '👤' : '🤖'}
+        {messages.map((msg) => {
+          // [[NOTES]] 메타 블록과 스트리밍 중 마커 일부는 화면에서 숨김
+          const displayContent = cleanDisplayContent(msg.content);
+          return (
+            <div key={msg.id} className={`message-row ${msg.role}`}>
+              <div className="message-avatar">
+                {msg.role === 'user' ? '👤' : '🤖'}
+              </div>
+              <div className="message-bubble">
+                {/* 스트리밍 중인 메시지가 아직 비어있으면 타이핑 인디케이터 표시 */}
+                {msg.id === streamingId && displayContent === '' ? (
+                  <span className="typing-indicator">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </span>
+                ) : (
+                  <FormattedMessage
+                    content={displayContent}
+                    isStreaming={msg.id === streamingId}
+                  />
+                )}
+              </div>
             </div>
-            <div className="message-bubble">
-              {/* 스트리밍 중인 메시지가 아직 비어있으면 타이핑 인디케이터 표시 */}
-              {msg.id === streamingId && msg.content === '' ? (
-                <span className="typing-indicator">
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                </span>
-              ) : (
-                <FormattedMessage
-                  content={msg.content}
-                  isStreaming={msg.id === streamingId}
-                />
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* 표현 노트 저장 UI (🟡 부분 정답·❌ 오답 채점 후) */}
+      {feedbackNotes.length > 0 && (
+        <div className="notes-save-box">
+          <div className="notes-save-header">
+            <strong>📝 복습 노트로 저장할 표현을 선택하세요</strong>
+            <span className="notes-save-sub">선택한 표현은 '나의 표현 노트' 탭에서 복습할 수 있습니다.</span>
+          </div>
+          <div className="notes-checkbox-list">
+            {feedbackNotes.map((item, idx) => (
+              <label key={idx} className="note-checkbox-item">
+                <input
+                  type="checkbox"
+                  checked={selectedNoteIndices.has(idx)}
+                  onChange={() => handleToggleNote(idx)}
+                />
+                <div className="note-item-text">
+                  <span className="note-category-tag">{item.category}</span>
+                  <span className="note-orig">"{item.original}"</span>
+                  <span className="note-arrow">→</span>
+                  <span className="note-corr">"{item.corrected}"</span>
+                  <div className="note-reason">{item.reason}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <div className="notes-save-actions">
+            <button
+              type="button"
+              className="save-notes-btn"
+              onClick={handleSaveSelectedNotes}
+              disabled={selectedNoteIndices.size === 0 || isLoading}
+            >
+              선택한 표현 노트에 저장 ({selectedNoteIndices.size}개)
+            </button>
+            {saveSuccessMessage && (
+              <span className="save-success-msg">✓ {saveSuccessMessage}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 빠른 응답 버튼: 첫 표현 소개 후 표시, 스트리밍 중 비활성화, 초기화 시 숨김 */}
+      {hasIntroduced && (
+        <div className="quick-topics-bar quick-replies-bar">
+          {QUICK_REPLIES.map((reply) => (
+            <button
+              key={reply.value}
+              type="button"
+              className="quick-chip"
+              onClick={() => handleSendMessage(reply.value)}
+              disabled={isLoading}
+            >
+              {reply.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 메시지 입력창 */}
       <div className="input-form-container">

@@ -114,6 +114,7 @@ export function App() {
               key={`expr-${expressionReset}`}
               hideHeader
               onStreamingChange={setIsStreaming}
+              onNotesSaved={updateDueCount}
             />
           </div>
 

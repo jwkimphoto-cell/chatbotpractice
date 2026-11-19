@@ -1564,6 +1564,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   font-size: 0.82rem;
   color: #334155;
 }
@@ -1585,6 +1586,17 @@
 .self-grade-btn.incorrect {
   background-color: #ef4444;
   color: #ffffff;
+}
+
+.self-grade-btn.partial {
+  background-color: #f59e0b;
+  color: #ffffff;
+}
+
+/* 표현 연습: 첫 표현 소개 후 입력창 위에 보이는 빠른 응답 버튼 줄 */
+.quick-replies-bar {
+  border-top: 1px solid #e5e7eb;
+  border-bottom: none;
 }
 
 .quiz-next-actions {

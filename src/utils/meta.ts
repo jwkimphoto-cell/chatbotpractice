@@ -9,8 +9,19 @@ export interface ParsedNoteItem {
   reason: string;
 }
 
+/** 복습 채점 4단계 판정 */
+export type ReviewVerdict = 'correct' | 'alternative' | 'partial' | 'incorrect';
+
 export interface ParsedResult {
+  verdict: ReviewVerdict;
+  /** verdict가 correct·alternative이면 true (기존 코드 호환용) */
   correct: boolean;
+}
+
+const ALLOWED_VERDICTS: ReviewVerdict[] = ['correct', 'alternative', 'partial', 'incorrect'];
+
+export function isPassingVerdict(verdict: ReviewVerdict): boolean {
+  return verdict === 'correct' || verdict === 'alternative';
 }
 
 const ALLOWED_CATEGORIES: NoteCategory[] = ['높임법', '완곡 표현', '보고 순서', '어휘·문법'];
@@ -108,8 +119,15 @@ export function extractResult(text: string): ParsedResult | null {
 
   try {
     const parsed = JSON.parse(match[1].trim());
-    if (parsed && typeof parsed.correct === 'boolean') {
-      return { correct: parsed.correct };
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    // verdict가 있으면 verdict 기준, 없으면 기존 correct 값으로 판단 (하위 호환)
+    if (ALLOWED_VERDICTS.includes(parsed.verdict)) {
+      const verdict = parsed.verdict as ReviewVerdict;
+      return { verdict, correct: isPassingVerdict(verdict) };
+    }
+    if (typeof parsed.correct === 'boolean') {
+      return { verdict: parsed.correct ? 'correct' : 'incorrect', correct: parsed.correct };
     }
     return null;
   } catch {
