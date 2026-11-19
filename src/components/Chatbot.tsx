@@ -171,7 +171,7 @@ export const Chatbot: React.FC = () => {
   /** 2단계: 난이도 선택 → 메시지 전송 */
   const handleDifficultySelect = (difficultyValue: string) => {
     if (isLoading || !selectedTopic) return;
-    const prompt = `주제: ${selectedTopic}\n난이도: ${difficultyValue}\n위 조건에 맞는 회의 한국어연습 퀴즈를 시작해줘.`;
+    const prompt = `주제: ${selectedTopic}\n난이도: ${difficultyValue}\n위 조건에 맞는 회의 한국어 대화 연습을 시작해줘.`;
     setSelectedTopic(null);
     handleSendMessage(prompt);
   };
