@@ -100,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return res.status(500).json({
-      error: 'OPENAI_API_KEY 환경 변수가 설정되지 않았습니다. 루트 디렉터리의 .env.local 파일에 OPENAI_API_KEY를 입력해 주세요.',
+      error: 'OPENAI_API_KEY 환경 변수가 설정되지 않았습니다. Vercel 프로젝트 설정의 Environment Variables 또는 로컬의 .env.local에 OPENAI_API_KEY를 등록해 주세요.',
     });
   }
 

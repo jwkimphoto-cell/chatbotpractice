@@ -260,8 +260,9 @@ export const Chatbot: React.FC = () => {
           <div>
             <strong>⚠️ 오류:</strong> {errorMessage}
             {errorMessage.includes('OPENAI_API_KEY') && (
-              <div style={{ marginTop: '4px', fontSize: '0.82rem' }}>
-                💡 프로젝트 루트의 <code>.env.local</code> 파일에 <code>OPENAI_API_KEY=your_key_here</code>를 입력한 후 다시 시도해 주세요.
+              <div style={{ marginTop: '6px', fontSize: '0.82rem', lineHeight: '1.5' }}>
+                <div>🚀 <strong>Vercel 배포 환경:</strong> Vercel 대시보드 → 프로젝트 선택 → <strong>Settings</strong> → <strong>Environment Variables</strong>에서 <code>OPENAI_API_KEY</code>를 등록한 후 재배포(Redeploy)해 주세요.</div>
+                <div style={{ marginTop: '4px' }}>💻 <strong>로컬 환경:</strong> 프로젝트 루트의 <code>.env.local</code> 파일에 <code>OPENAI_API_KEY=your_key_here</code>를 입력해 주세요.</div>
               </div>
             )}
           </div>
