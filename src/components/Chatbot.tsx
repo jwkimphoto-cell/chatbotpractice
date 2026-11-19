@@ -7,6 +7,11 @@ interface DisplayMessage extends ChatMessage {
   id: string;
 }
 
+interface ChatbotProps {
+  hideHeader?: boolean;
+  onStreamingChange?: (isStreaming: boolean) => void;
+}
+
 const INITIAL_GREETING = `안녕하세요! 외국인 직장인을 위한 직장 한국어 연습 도우미입니다. 💼
 회의, 보고, 이메일 등 다양한 직장 상황에서 꼭 필요한 한국어 표현을 배우고 빈칸 채우기 퀴즈로 복습해 보세요.
 
@@ -26,7 +31,10 @@ const DIFFICULTY_OPTIONS = [
   { label: '🔴 고급', value: '고급' },
 ];
 
-export const Chatbot: React.FC = () => {
+export const Chatbot: React.FC<ChatbotProps> = ({
+  hideHeader = false,
+  onStreamingChange,
+}) => {
   const [messages, setMessages] = useState<DisplayMessage[]>([
     {
       id: 'init-msg',
@@ -50,6 +58,20 @@ export const Chatbot: React.FC = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const handleReset = useCallback(() => {
+    if (isLoading) return;
+    setMessages([
+      {
+        id: `init-${Date.now()}`,
+        role: 'assistant',
+        content: INITIAL_GREETING,
+      },
+    ]);
+    setErrorMessage(null);
+    setInput('');
+    setSelectedTopic(null);
+  }, [isLoading]);
 
   useEffect(() => {
     scrollToBottom();
@@ -91,6 +113,7 @@ export const Chatbot: React.FC = () => {
     }
 
     setIsLoading(true);
+    onStreamingChange?.(true);
 
     // 빈 어시스턴트 메시지를 미리 추가 (여기에 스트리밍 텍스트가 채워짐)
     const assistantId = `assistant-${Date.now()}`;
@@ -129,6 +152,7 @@ export const Chatbot: React.FC = () => {
     } finally {
       setIsLoading(false);
       setStreamingId(null);
+      onStreamingChange?.(false);
     }
   };
 
@@ -146,20 +170,6 @@ export const Chatbot: React.FC = () => {
     setInput(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
-  };
-
-  const handleReset = () => {
-    if (isLoading) return;
-    setMessages([
-      {
-        id: `init-${Date.now()}`,
-        role: 'assistant',
-        content: INITIAL_GREETING,
-      },
-    ]);
-    setErrorMessage(null);
-    setInput('');
-    setSelectedTopic(null);
   };
 
   /** 1단계: 주제 선택 */
@@ -184,27 +194,29 @@ export const Chatbot: React.FC = () => {
 
   return (
     <div className="chatbot-container">
-      {/* 헤더 */}
-      <header className="chatbot-header">
-        <div className="chatbot-title-group">
-          <h2>💼 직장 한국어 연습 도우미</h2>
-          <p>외국인 직장인을 위한 직장 한국어 표현 학습 & 빈칸 채우기 복습 퀴즈</p>
-        </div>
-        <div className="chatbot-header-actions">
-          <span className="model-badge" title="OpenAI Responses API / reasoning.effort: none">
-            gpt-6-luna (effort: none)
-          </span>
-          <button
-            type="button"
-            className="reset-button"
-            onClick={handleReset}
-            disabled={isLoading}
-            title="대화 초기화"
-          >
-            새 대화
-          </button>
-        </div>
-      </header>
+      {/* 헤더 (단독 실행 시에만 렌더링) */}
+      {!hideHeader && (
+        <header className="chatbot-header">
+          <div className="chatbot-title-group">
+            <h2>💼 직장 한국어 연습 도우미</h2>
+            <p>외국인 직장인을 위한 직장 한국어 표현 학습 & 빈칸 채우기 복습 퀴즈</p>
+          </div>
+          <div className="chatbot-header-actions">
+            <span className="model-badge" title="OpenAI Responses API / reasoning.effort: none">
+              gpt-6-luna (effort: none)
+            </span>
+            <button
+              type="button"
+              className="reset-button"
+              onClick={handleReset}
+              disabled={isLoading}
+              title="대화 초기화"
+            >
+              새 대화
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* 2단계 추천 선택 바 */}
       <div className="quick-topics-bar">

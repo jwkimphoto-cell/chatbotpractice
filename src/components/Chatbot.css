@@ -2,17 +2,11 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 900px;
-  height: calc(100vh - 40px);
-  max-height: 860px;
-  margin: 20px auto;
+  height: 100%;
   background-color: #ffffff;
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Pretendard', sans-serif;
   color: #1f2937;
-  border: 1px solid #e5e7eb;
 }
 
 /* 헤더 영역 */
@@ -529,4 +523,1195 @@
   display: flex;
   justify-content: space-between;
 }
+
+/* ==========================================================================
+   상황 롤플레이 (RoleplayPractice) 스타일
+   ========================================================================== */
+.roleplay-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #ffffff;
+}
+
+.roleplay-select-pane,
+.roleplay-diff-pane,
+.notes-list-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background-color: #f8fafc;
+}
+
+.roleplay-pane-header {
+  margin-bottom: 20px;
+}
+
+.roleplay-pane-header h3 {
+  margin: 0 0 6px 0;
+  font-size: 1.15rem;
+  color: #0f172a;
+}
+
+.roleplay-pane-header p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+/* 장면 카드 그리드 */
+.scene-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.scene-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.scene-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.1);
+  transform: translateY(-2px);
+}
+
+.scene-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.scene-badge {
+  background-color: #eff6ff;
+  color: #2563eb;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.scene-counterpart {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.scene-title {
+  margin: 0 0 8px 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.scene-situation {
+  margin: 0 0 12px 0;
+  font-size: 0.84rem;
+  color: #475569;
+  line-height: 1.45;
+  flex: 1;
+}
+
+.scene-goal {
+  background-color: #f1f5f9;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: #334155;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.scene-card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.scene-start-btn {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+/* 롤플레이 난이도 선택 패널 */
+.diff-selected-preview {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px;
+  margin: 16px 0 20px 0;
+}
+
+.diff-selected-preview h4 {
+  margin: 8px 0 6px 0;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.preview-situation {
+  margin: 0 0 8px 0;
+  font-size: 0.88rem;
+  color: #475569;
+}
+
+.preview-goal {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #2563eb;
+}
+
+.diff-prompt-box h4 {
+  margin: 0 0 4px 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.diff-prompt-box p {
+  margin: 0 0 14px 0;
+  font-size: 0.84rem;
+  color: #64748b;
+}
+
+.diff-btn-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.diff-choice-btn {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.diff-choice-btn:hover {
+  border-color: #2563eb;
+  background-color: #eff6ff;
+}
+
+.diff-choice-btn .diff-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #0f172a;
+}
+
+.diff-choice-btn .diff-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* 롤플레이 대화 창 상단 요약 바 */
+.roleplay-chat-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.roleplay-summary-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.summary-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-title {
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.summary-info {
+  color: #475569;
+}
+
+.summary-divider {
+  color: #cbd5e1;
+}
+
+.summary-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.summary-diff-badge {
+  background-color: #e2e8f0;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.summary-reset-btn {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  color: #475569;
+}
+
+.summary-reset-btn:hover {
+  background-color: #e2e8f0;
+}
+
+/* 피드백 받기 버튼 */
+.feedback-trigger-btn {
+  height: 48px;
+  padding: 0 16px;
+  background-color: #ffffff;
+  border: 1px solid #3b82f6;
+  color: #2563eb;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.feedback-trigger-btn:hover:not(:disabled) {
+  background-color: #eff6ff;
+  border-color: #1d4ed8;
+}
+
+.feedback-trigger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   표현 노트 저장 박스 (롤플레이 & 이메일 공통)
+   ========================================================================== */
+.notes-save-box {
+  background-color: #f0fdf4;
+  border-top: 1px solid #bbf7d0;
+  border-bottom: 1px solid #bbf7d0;
+  padding: 12px 18px;
+  flex-shrink: 0;
+}
+
+.notes-save-header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+
+.notes-save-header strong {
+  font-size: 0.9rem;
+  color: #166534;
+}
+
+.notes-save-sub {
+  font-size: 0.78rem;
+  color: #15803d;
+}
+
+.notes-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.note-checkbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background-color: #ffffff;
+  border: 1px solid #dcfce7;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.84rem;
+}
+
+.note-item-text {
+  flex: 1;
+}
+
+.note-category-tag {
+  background-color: #dbeafe;
+  color: #1e40af;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+
+.note-orig {
+  color: #dc2626;
+  text-decoration: line-through;
+  margin-right: 6px;
+}
+
+.note-arrow {
+  color: #94a3b8;
+  margin-right: 6px;
+}
+
+.note-corr {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.note-reason {
+  margin-top: 3px;
+  font-size: 0.76rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.notes-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.save-notes-btn {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.save-notes-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.save-success-msg {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #15803d;
+}
+
+/* ==========================================================================
+   이메일 첨삭 (EmailCoach) 스타일
+   ========================================================================== */
+.email-coach-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #ffffff;
+}
+
+.email-form-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background-color: #f8fafc;
+}
+
+.email-form-header h3 {
+  margin: 0 0 6px 0;
+  font-size: 1.15rem;
+  color: #0f172a;
+}
+
+.email-form-header p {
+  margin: 0 0 18px 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.email-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.email-field-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.email-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.email-field-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.label-sub {
+  font-weight: 400;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.label-required {
+  color: #ef4444;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.label-with-counter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.char-counter {
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.char-counter.over {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.email-select,
+.email-text-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background-color: #ffffff;
+  color: #0f172a;
+  outline: none;
+}
+
+.email-select:focus,
+.email-text-input:focus,
+.email-body-textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.email-body-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-family: inherit;
+  line-height: 1.55;
+  resize: vertical;
+  min-height: 150px;
+  outline: none;
+}
+
+.email-submit-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.email-submit-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.email-submit-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* 이메일 결과 화면 */
+.email-result-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.email-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 18px;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.result-header-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #334155;
+}
+
+.email-badge {
+  background-color: #dbeafe;
+  color: #1e40af;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   나의 표현 노트 & 복습 퀴즈 (ExpressionNotes) 스타일
+   ========================================================================== */
+.notes-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #ffffff;
+}
+
+.notes-summary-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.notes-count-info {
+  font-size: 0.88rem;
+  color: #334155;
+}
+
+.notes-count-info strong {
+  color: #2563eb;
+}
+
+.notes-review-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.review-start-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.review-start-btn.due {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: none;
+}
+
+.review-start-btn.due:disabled {
+  background: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.review-start-btn.all {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+.review-start-btn.all:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+
+.review-start-btn.all:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 필터 바 */
+.notes-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 18px;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.filter-label {
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+  min-width: 32px;
+}
+
+.filter-chip {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  padding: 3px 10px;
+  border-radius: 14px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.filter-chip.active {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* 노트 카드 그리드 */
+.notes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+  padding-bottom: 20px;
+}
+
+.note-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+}
+
+.card-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-scene-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.card-tags {
+  display: flex;
+  gap: 4px;
+}
+
+.card-cat-badge {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.card-box-badge {
+  background-color: #f1f5f9;
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.card-expr-compare {
+  background-color: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.84rem;
+}
+
+.expr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.expr-label {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  flex-shrink: 0;
+  min-width: 48px;
+}
+
+.expr-row.original .expr-text {
+  color: #dc2626;
+  text-decoration: line-through;
+}
+
+.expr-row.corrected .expr-text {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.card-reason {
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.card-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.card-review-date {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+.card-delete-btn {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  font-size: 0.76rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.inline-delete-confirm {
+  font-size: 0.74rem;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.confirm-yes-btn {
+  background-color: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.confirm-no-btn {
+  background-color: #cbd5e1;
+  color: #334155;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+/* 카드가 없을 때 */
+.notes-empty-box {
+  background-color: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  margin: 20px 0;
+}
+
+.empty-icon {
+  font-size: 2.2rem;
+  margin-bottom: 10px;
+}
+
+.notes-empty-box h4 {
+  margin: 0 0 6px 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.notes-empty-box p {
+  margin: 0 0 18px 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.empty-nav-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.empty-nav-btn {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.empty-nav-btn:hover {
+  background-color: #dbeafe;
+}
+
+/* ==========================================================================
+   복습 퀴즈 모드 (Review Quiz) 스타일
+   ========================================================================== */
+.review-quiz-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background-color: #f8fafc;
+}
+
+.review-quiz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.quiz-progress-badge {
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 16px;
+}
+
+.quiz-card-box {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  margin-bottom: 20px;
+}
+
+.quiz-scene-info {
+  font-size: 0.84rem;
+  color: #64748b;
+  margin-bottom: 14px;
+}
+
+.quiz-question-box {
+  background-color: #f8fafc;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.quiz-q-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.quiz-original-quote {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  background-color: #fef2f2;
+  border-left: 3px solid #ef4444;
+  border-radius: 0 6px 6px 0;
+}
+
+.quiz-hint-text {
+  font-size: 0.82rem;
+  color: #2563eb;
+}
+
+.quiz-input-area {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.quiz-text-input {
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.quiz-text-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.quiz-submit-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 0 20px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quiz-submit-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.quiz-feedback-box {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.self-grade-box {
+  margin: 12px 0;
+}
+
+.reveal-answer-btn {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #2563eb;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.revealed-answer-area {
+  background-color: #f1f5f9;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.revealed-model-text {
+  font-size: 0.92rem;
+  color: #1e3a8a;
+  margin-bottom: 4px;
+}
+
+.revealed-reason-text {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.self-grade-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #334155;
+}
+
+.self-grade-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.self-grade-btn.correct {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.self-grade-btn.incorrect {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+.quiz-next-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.quiz-next-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 퀴즈 종료 요약 박스 */
+.quiz-summary-box {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 36px 20px;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.quiz-finish-icon {
+  font-size: 2.8rem;
+  margin-bottom: 12px;
+}
+
+.quiz-summary-box h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.session-stat-card {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  display: inline-block;
+  min-width: 260px;
+  margin-bottom: 14px;
+}
+
+.stat-highlight {
+  font-size: 1.15rem;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.correct-count {
+  color: #2563eb;
+  font-size: 1.35rem;
+}
+
+.stat-next-date {
+  font-size: 0.84rem;
+  color: #64748b;
+}
+
+.summary-desc {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0 0 20px 0;
+}
+
+.back-to-notes-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 모바일 375px 반응형 */
+@media (max-width: 640px) {
+  .scene-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diff-btn-group {
+    grid-template-columns: 1fr;
+  }
+
+  .email-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .notes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notes-summary-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .roleplay-summary-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .roleplay-select-pane,
+  .roleplay-diff-pane,
+  .email-form-pane,
+  .notes-list-pane,
+  .review-quiz-pane {
+    padding: 14px;
+  }
+
+  .quiz-card-box {
+    padding: 16px;
+  }
+
+  .quiz-input-area {
+    flex-direction: column;
+  }
+}
+
 
