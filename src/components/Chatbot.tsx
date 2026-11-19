@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { sendChatMessage, type ChatMessage } from '../api/chat';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { streamChatMessage, type ChatMessage } from '../api/chat';
 import './Chatbot.css';
 
 interface DisplayMessage extends ChatMessage {
@@ -30,6 +30,9 @@ export const Chatbot: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  /** 스트리밍 중인 어시스턴트 메시지의 id (없으면 스트리밍 아님) */
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -40,6 +43,21 @@ export const Chatbot: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  /**
+   * 스트리밍 중인 어시스턴트 메시지의 content를 실시간 업데이트하는 콜백.
+   * messages 배열의 마지막 항목(streamingId와 일치)에 텍스트를 누적한다.
+   */
+  const appendDelta = useCallback((msgId: string, chunk: string) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.id === msgId) {
+        // 마지막 메시지만 업데이트 — 나머지는 참조 유지
+        return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
+      }
+      return prev;
+    });
+  }, []);
 
   const handleSendMessage = async (textToSend?: string) => {
     const trimmed = (textToSend ?? input).trim();
@@ -63,28 +81,43 @@ export const Chatbot: React.FC = () => {
 
     setIsLoading(true);
 
+    // 빈 어시스턴트 메시지를 미리 추가 (여기에 스트리밍 텍스트가 채워짐)
+    const assistantId = `assistant-${Date.now()}`;
+    const assistantPlaceholder: DisplayMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+    };
+    const messagesWithPlaceholder = [...newMessages, assistantPlaceholder];
+    setMessages(messagesWithPlaceholder);
+    setStreamingId(assistantId);
+
     try {
-      // API 전송용 메시지 목록 (role과 content만 전달)
+      // API 전송용 메시지 목록 (role과 content만 전달, placeholder 제외)
       const apiPayload: ChatMessage[] = newMessages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
-      const reply = await sendChatMessage(apiPayload);
-
-      const assistantMessage: DisplayMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: reply,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error: any) {
+      await streamChatMessage(apiPayload, (chunk) => {
+        appendDelta(assistantId, chunk);
+      });
+    } catch (error: unknown) {
       console.error('Chat error:', error);
-      const msg = error?.message || '메시지 전송에 실패했습니다.';
+      const msg = error instanceof Error ? error.message : '메시지 전송에 실패했습니다.';
       setErrorMessage(msg);
+
+      // 스트리밍 중 에러 발생 시, 빈 placeholder가 남아있으면 제거
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.id === assistantId && last.content === '') {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
     } finally {
       setIsLoading(false);
+      setStreamingId(null);
     }
   };
 
@@ -192,23 +225,22 @@ export const Chatbot: React.FC = () => {
               {msg.role === 'user' ? '👤' : '🤖'}
             </div>
             <div className="message-bubble">
-              {msg.content}
+              {/* 스트리밍 중인 메시지가 아직 비어있으면 타이핑 인디케이터 표시 */}
+              {msg.id === streamingId && msg.content === '' ? (
+                <span className="typing-indicator">
+                  <span className="typing-dot" />
+                  <span className="typing-dot" />
+                  <span className="typing-dot" />
+                </span>
+              ) : (
+                <>
+                  {msg.content}
+                  {msg.id === streamingId && <span className="streaming-cursor" />}
+                </>
+              )}
             </div>
           </div>
         ))}
-
-        {isLoading && (
-          <div className="message-row assistant">
-            <div className="message-avatar">🤖</div>
-            <div className="message-bubble">
-              <span className="typing-indicator">
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-              </span>
-            </div>
-          </div>
-        )}
 
         <div ref={messagesEndRef} />
       </div>
@@ -250,4 +282,3 @@ export const Chatbot: React.FC = () => {
 };
 
 export default Chatbot;
-

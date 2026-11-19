@@ -68,43 +68,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: '전송할 유효한 메시지가 없습니다.' });
     }
 
-    // OpenAI Responses API 호출 (gpt-6-luna 모델 및 reasoning.effort: 'none')
-    const response = await openai.responses.create({
+    // SSE 헤더 설정
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    // OpenAI Responses API 스트리밍 호출 (gpt-6-luna 모델 및 reasoning.effort: 'none')
+    const stream = await openai.responses.create({
       model: 'gpt-6-luna',
       instructions: WORKPLACE_KOREAN_SYSTEM_PROMPT,
       input: inputItems,
       reasoning: {
         effort: 'none',
       },
+      stream: true,
     });
 
-    // 응답 텍스트 추출
-    let replyText = response.output_text;
-    if (!replyText && Array.isArray(response.output)) {
-      const texts: string[] = [];
-      for (const item of response.output) {
-        if (item.type === 'message' && Array.isArray(item.content)) {
-          for (const contentItem of item.content) {
-            if (contentItem.type === 'output_text' && contentItem.text) {
-              texts.push(contentItem.text);
-            }
-          }
-        }
+    // 스트림 이벤트를 SSE 형식으로 클라이언트에 전달
+    for await (const event of stream) {
+      if (event.type === 'response.output_text.delta') {
+        const data = JSON.stringify({ type: 'delta', text: event.delta });
+        res.write(`data: ${data}\n\n`);
+      } else if (event.type === 'response.completed') {
+        res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       }
-      replyText = texts.join('\n');
     }
 
-    if (!replyText) {
-      replyText = '답변을 생성하지 못했습니다. 다시 시도해 주세요.';
-    }
-
-    return res.status(200).json({ message: replyText });
+    res.end();
   } catch (error: any) {
     console.error('OpenAI API 호출 에러:', error);
     const errorMessage = error?.message || 'OpenAI API 호출 중 오류가 발생했습니다.';
-    return res.status(500).json({
-      error: errorMessage,
-    });
+
+    // 아직 SSE 헤더를 보내기 전에 에러가 발생한 경우 JSON 에러 응답
+    if (!res.headersSent) {
+      return res.status(500).json({ error: errorMessage });
+    }
+
+    // 이미 SSE 스트리밍 중이면 에러 이벤트로 전송
+    res.write(`data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`);
+    res.end();
   }
 }
-
