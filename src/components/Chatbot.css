@@ -109,6 +109,57 @@
   color: #1d4ed8;
 }
 
+.quick-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 선택 완료된 주제 칩 (2단계에서 표시) */
+.quick-chip.quick-chip-selected {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  cursor: default;
+  font-weight: 600;
+}
+
+/* 단계 구분 화살표 */
+.quick-topics-divider {
+  font-size: 1rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* 뒤로가기 버튼 */
+.quick-back-button {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.quick-back-button:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  color: #334155;
+}
+
+.quick-back-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 메시지 목록 */
 .messages-container {
   flex: 1;

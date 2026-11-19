@@ -11,11 +11,19 @@ const INITIAL_GREETING = `안녕하세요! 직장 한국어 연습 챗봇입니�
 
 연습하고 싶으신 **직장 상황(보고·회의·이메일 등)**과 **난이도(초급/중급/고급)**를 말씀해 주시면 바로 실전 연습을 시작하겠습니다!`;
 
-const QUICK_TOPICS = [
-  { label: '📊 주간 업무 보고 (초급)', prompt: '팀장님께 주간 업무 진행 상황을 보고하는 상황으로 초급 난이도 연습을 하고 싶습니다.' },
-  { label: '📧 납기 연기 요청 이메일 (중급)', prompt: '협력업체 또는 상사에게 프로젝트 마감 일정 연기를 정중히 요청하는 이메일 작성 연습을 하고 싶습니다. (중급)' },
-  { label: '🤝 프로젝트 기획 회의 (중급)', prompt: '부서 간 회의에서 새로운 마케팅 기획안에 대해 의견을 제시하고 토론하는 회의 장면을 연습하고 싶습니다. (중급)' },
-  { label: '⚠️ 긴급 장애 대응 공지 (고급)', prompt: '거래처에 긴급 시스템 장애 상황을 알리고 양해를 구하는 고급 비즈니스 커뮤니케이션을 연습하고 싶습니다.' },
+/** 1단계: 주제 선택 목록 */
+const TOPIC_OPTIONS = [
+  { label: '📊 주간 회의', value: '주간 회의' },
+  { label: '📅 월간 회의', value: '월간 회의' },
+  { label: '📢 마케팅 회의', value: '마케팅 회의' },
+  { label: '🚀 신사업 회의', value: '신사업 회의' },
+];
+
+/** 2단계: 난이도 선택 목록 */
+const DIFFICULTY_OPTIONS = [
+  { label: '🟢 초급', value: '초급' },
+  { label: '🟡 중급', value: '중급' },
+  { label: '🔴 고급', value: '고급' },
 ];
 
 export const Chatbot: React.FC = () => {
@@ -32,6 +40,9 @@ export const Chatbot: React.FC = () => {
 
   /** 스트리밍 중인 어시스턴트 메시지의 id (없으면 스트리밍 아님) */
   const [streamingId, setStreamingId] = useState<string | null>(null);
+
+  /** 2단계 추천 선택 상태: 선택된 주제 (null이면 1단계=주제 선택) */
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -148,11 +159,27 @@ export const Chatbot: React.FC = () => {
     ]);
     setErrorMessage(null);
     setInput('');
+    setSelectedTopic(null);
   };
 
-  const handleQuickChipClick = (prompt: string) => {
+  /** 1단계: 주제 선택 */
+  const handleTopicSelect = (topicValue: string) => {
     if (isLoading) return;
+    setSelectedTopic(topicValue);
+  };
+
+  /** 2단계: 난이도 선택 → 메시지 전송 */
+  const handleDifficultySelect = (difficultyValue: string) => {
+    if (isLoading || !selectedTopic) return;
+    const prompt = `주제: ${selectedTopic}\n난이도: ${difficultyValue}\n위 조건에 맞는 영어 단어 퀴즈를 시작해줘.`;
+    setSelectedTopic(null);
     handleSendMessage(prompt);
+  };
+
+  /** 주제 선택 되돌리기 */
+  const handleTopicBack = () => {
+    if (isLoading) return;
+    setSelectedTopic(null);
   };
 
   return (
@@ -179,20 +206,52 @@ export const Chatbot: React.FC = () => {
         </div>
       </header>
 
-      {/* 퀵 추천 상황 바 */}
+      {/* 2단계 추천 선택 바 */}
       <div className="quick-topics-bar">
-        <span className="quick-topics-label">추천 상황:</span>
-        {QUICK_TOPICS.map((topic, idx) => (
-          <button
-            key={idx}
-            type="button"
-            className="quick-chip"
-            onClick={() => handleQuickChipClick(topic.prompt)}
-            disabled={isLoading}
-          >
-            {topic.label}
-          </button>
-        ))}
+        {selectedTopic === null ? (
+          /* 1단계: 주제 선택 */
+          <>
+            <span className="quick-topics-label">주제 선택:</span>
+            {TOPIC_OPTIONS.map((topic, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="quick-chip"
+                onClick={() => handleTopicSelect(topic.value)}
+                disabled={isLoading}
+              >
+                {topic.label}
+              </button>
+            ))}
+          </>
+        ) : (
+          /* 2단계: 난이도 선택 */
+          <>
+            <button
+              type="button"
+              className="quick-back-button"
+              onClick={handleTopicBack}
+              disabled={isLoading}
+              title="주제 다시 선택"
+            >
+              ←
+            </button>
+            <span className="quick-chip quick-chip-selected">{selectedTopic}</span>
+            <span className="quick-topics-divider">›</span>
+            <span className="quick-topics-label">난이도:</span>
+            {DIFFICULTY_OPTIONS.map((diff, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="quick-chip"
+                onClick={() => handleDifficultySelect(diff.value)}
+                disabled={isLoading}
+              >
+                {diff.label}
+              </button>
+            ))}
+          </>
+        )}
       </div>
 
       {/* 에러 알림 배너 */}
