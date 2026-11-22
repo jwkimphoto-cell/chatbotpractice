@@ -39,6 +39,40 @@ export function stripSourceTags(text: string): string {
 }
 
 /**
+ * 응답 전체가 같은 내용으로 두 번 이어 붙은 경우(모델이 초안과 최종본을 둘 다 낸 경우) 한 번만 남깁니다.
+ * 앞뒤 절반이 공백만 빼고 완전히 같을 때만 줄이며, 짧은 응답(40자 미만)은 건드리지 않습니다.
+ */
+export function collapseRepeatedReply(text: string): string {
+  if (!text) return '';
+  const t = text.trim();
+  if (t.length < 80) return text;
+  const mid = Math.floor(t.length / 2);
+  for (let i = mid - 8; i <= mid + 8; i++) {
+    if (i <= 0 || i >= t.length) continue;
+    const a = t.slice(0, i).trim();
+    const b = t.slice(i).trim();
+    if (a.length >= 40 && a === b) return a;
+  }
+  return text;
+}
+
+/**
+ * 표현 소개 응답에 세트 제목("1단계: 표현 소개 …")이 두 번 이상 나오면(초안을 낸 뒤 고친 판을 다시 낸 경우)
+ * 마지막 판만 남깁니다. 세트 제목 앞에 "(지난 퀴즈 정답: …)" 같은 머리말이 있으면 그 부분은 유지합니다.
+ */
+export function keepLastIntroSet(text: string): string {
+  if (!text) return '';
+  // 두 번째 판이 줄바꿈 없이 앞 줄 끝에 붙어 오는 경우가 있어 줄 처음이 아니어도 찾음 ("(세트"까지 맞아야 인정)
+  const re = /(?:\*\*)?1단계:\s*표현 소개\s*\(세트/g;
+  const starts: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) starts.push(m.index);
+  if (starts.length < 2) return text;
+  const head = text.slice(0, starts[0]);
+  return head + text.slice(starts[starts.length - 1]);
+}
+
+/**
  * 화면 표시용 텍스트 정제:
  * 1) [[NOTES]] 또는 [[RESULT]] 시작점부터 뒤쪽 전체를 숨김
  * 2) 스트리밍 중 마커 앞부분(예: "[[", "[[N", "[[NOTES", "[[R" 등)으로 끝나는 꼬리도 숨김

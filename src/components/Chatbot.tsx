@@ -1,12 +1,33 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
 import { FormattedMessage } from './FormattedMessage';
-import { cleanDisplayContent, extractNotes, stripMetaForHistory, stripSourceTags, type ParsedNoteItem } from '../utils/meta';
+import {
+  cleanDisplayContent,
+  collapseRepeatedReply,
+  extractNotes,
+  keepLastIntroSet,
+  stripMetaForHistory,
+  stripSourceTags,
+  type ParsedNoteItem,
+} from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
+import {
+  EMPTY_HISTORY,
+  buildHistoryBlock,
+  isHistoryCommand,
+  mergeHistory,
+  type ExpressionHistory,
+} from '../utils/expressionHistory';
 import './Chatbot.css';
 
 interface DisplayMessage extends ChatMessage {
   id: string;
+  /**
+   * API 전송용 텍스트. 없으면 content를 그대로 보냄.
+   * "다른 표현"/"퀴즈 시작"은 화면에는 누른 문구만 보이고(content), 전송용에만 [이미 소개한 문형] 블록을 붙임.
+   * 이후 대화 기록을 다시 보낼 때도 이 값을 씀.
+   */
+  apiContent?: string;
 }
 
 interface ChatbotProps {
@@ -67,6 +88,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({
   const [selectedNoteIndices, setSelectedNoteIndices] = useState<Set<number>>(new Set());
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
+  /** 이미 소개한 문형·대표 문장 (표현 소개 응답이 끝날 때마다 코드가 직접 누적) */
+  const [introHistory, setIntroHistory] = useState<ExpressionHistory>(EMPTY_HISTORY);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -89,6 +113,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     setFeedbackNotes([]);
     setSelectedNoteIndices(new Set());
     setSaveSuccessMessage(null);
+    setIntroHistory(EMPTY_HISTORY);
   }, [isLoading]);
 
   useEffect(() => {
@@ -117,10 +142,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     setErrorMessage(null);
     setSaveSuccessMessage(null);
 
+    // "다른 표현"/"퀴즈 시작"이면 전송용 텍스트에만 이미 소개한 문형·대표 문장 블록을 붙임
+    const historyBlock = isHistoryCommand(trimmed) ? buildHistoryBlock(introHistory) : '';
     const userMessage: DisplayMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: trimmed,
+      ...(historyBlock ? { apiContent: trimmed + historyBlock } : {}),
     };
 
     const newMessages = [...messages, userMessage];
@@ -146,15 +174,26 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     setStreamingId(assistantId);
 
     try {
-      // API 전송용 메시지 목록 (role과 content만 전달, placeholder 제외, 메타 블록 제거)
+      // API 전송용 메시지 목록 (role과 전송용 텍스트만 전달, placeholder 제외, 메타 블록 제거)
       const apiPayload: ChatMessage[] = newMessages.map((m) => ({
         role: m.role,
-        content: stripMetaForHistory(m.content),
+        content: stripMetaForHistory(m.apiContent ?? m.content),
       }));
 
-      const reply = await streamChatMessage(apiPayload, (chunk) => {
+      const rawReply = await streamChatMessage(apiPayload, (chunk) => {
         appendDelta(assistantId, chunk);
       });
+
+      // 응답이 두 번 이어 붙어 나왔으면 한 번만 남김 (화면과 이후 대화 기록 모두)
+      // ① 완전히 같은 두 판 → 한 번 ② 세트 제목이 두 번(초안 + 고친 판) → 마지막 판만
+      const reply = keepLastIntroSet(collapseRepeatedReply(rawReply));
+      if (reply !== rawReply) {
+        console.warn('[Chatbot] 응답이 두 번 이어 붙어 와서 한 판만 남겼습니다.');
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: reply } : m)));
+      }
+
+      // 표현 소개 응답이면 문형·대표 문장을 기록에 누적 (다른 응답은 그대로)
+      setIntroHistory((prev) => mergeHistory(prev, reply));
 
       // 🟡 부분 정답·❌ 오답 채점에만 붙는 [[NOTES]] → 저장 후보로 표시 (자동 저장 안 함)
       const extracted = extractNotes(reply);
@@ -209,6 +248,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({
     if (isLoading || !selectedTopic) return;
     const prompt = `주제: ${selectedTopic}\n난이도: ${difficultyValue}\n위 조건에 맞는 직장 한국어 표현 연습을 시작해줘.`;
     setSelectedTopic(null);
+    // 주제·난이도를 새로 고르면 이미 소개한 문형 기록을 비움
+    setIntroHistory(EMPTY_HISTORY);
     handleSendMessage(prompt);
   };
 

@@ -7,6 +7,14 @@ import {
   REVIEW_GRADER_PROMPT,
 } from './_lib/prompts.js';
 import { SERVER_SCENES } from './_lib/scenes.js';
+import {
+  buildNextSetInstruction,
+  buildStartInstruction,
+  chooseNextPatterns,
+  findExpressionContext,
+  isStartRequest,
+  parseMoreRequest,
+} from './_lib/patterns.js';
 
 export { WORKPLACE_KOREAN_SYSTEM_PROMPT };
 
@@ -70,6 +78,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let instructions = '';
     if (mode === 'expression') {
       instructions = WORKPLACE_KOREAN_SYSTEM_PROMPT;
+
+      // "다른 표현" 요청이면 서버가 문형 목록에서 다음 세트 문형 3개를 직접 골라 안내를 덧붙임.
+      // 클라이언트 텍스트는 주제·난이도(고정 값 중 하나)와 이미 쓴 문형 판별에만 쓰고,
+      // instructions에는 서버 목록의 문형 형태와 고정 문구만 들어감.
+      const lastUser = [...messages]
+        .reverse()
+        .find((m) => m && m.role === 'user' && typeof m.content === 'string');
+      const usedPatterns = lastUser ? parseMoreRequest(lastUser.content) : null;
+      const ctx = findExpressionContext(messages);
+      if (ctx && usedPatterns) {
+        instructions += buildNextSetInstruction(ctx, chooseNextPatterns(ctx, usedPatterns));
+      } else if (ctx && lastUser && isStartRequest(lastUser.content)) {
+        // 첫 세트: 그 주제·난이도 목록의 예시 문장을 그대로 쓰지 않도록 안내 (서버 데이터만)
+        instructions += buildStartInstruction(ctx);
+      }
     } else if (mode === 'roleplay') {
       // Object.hasOwn: 'toString', '__proto__' 같은 프로토타입 키가 통과하지 않도록 검사
       if (typeof sceneId !== 'string' || !Object.hasOwn(SERVER_SCENES, sceneId)) {
