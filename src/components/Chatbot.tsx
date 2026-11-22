@@ -377,6 +377,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
                   <FormattedMessage
                     content={displayContent}
                     isStreaming={msg.id === streamingId}
+                    numberedTitles={msg.role === 'assistant'}
                   />
                 )}
               </div>

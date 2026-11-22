@@ -3,6 +3,12 @@ import React from 'react';
 interface FormattedMessageProps {
   content: string;
   isStreaming?: boolean;
+  /**
+   * true면 "1. 문장" 번호 줄을 항목 제목(굵은 글씨 + 왼쪽 강조선)으로 표시하고,
+   * 공백 3칸 이상으로 들여쓴 표시 없는 줄을 하위 항목의 이어지는 줄로 들여씁니다.
+   * 표현 연습(대표 문장 카드)에서만 사용 — 롤플레이·이메일 피드백의 번호 목록은 기존 모양 유지.
+   */
+  numberedTitles?: boolean;
 }
 
 /**
@@ -54,7 +60,7 @@ function renderInline(text: string): React.ReactNode[] {
 /**
  * AI 응답의 마크다운(### 제목, **굵은 글씨**, 목록, 줄바꿈 등)을 깔끔하게 서식화하여 렌더링하는 컴포넌트
  */
-export const FormattedMessage: React.FC<FormattedMessageProps> = ({ content, isStreaming }) => {
+export const FormattedMessage: React.FC<FormattedMessageProps> = ({ content, isStreaming, numberedTitles = false }) => {
   const lines = content.split('\n');
 
   return (
@@ -118,8 +124,45 @@ export const FormattedMessage: React.FC<FormattedMessageProps> = ({ content, isS
           );
         }
 
+        // 하위 항목: "  · 기능: …" (들여쓴 '·'/'•' 또는 공백 2칸 이상 들여쓴 '-'/'*')
+        const subMatch = line.match(/^\s*[·•]\s*(.*)$/) || line.match(/^\s{2,}[-*]\s+(.*)$/);
+        if (subMatch) {
+          return (
+            <div key={idx} className="msg-subbullet-item">
+              <span className="msg-subbullet-dot">·</span>
+              <span className="msg-subbullet-content">
+                {renderInline(subMatch[1])}
+                {cursor}
+              </span>
+            </div>
+          );
+        }
+
+        // 하위 항목의 이어지는 줄 (예: 초급 "· 기능" 아래 공백 4칸 영어 설명)
+        if (numberedTitles && /^\s{3,}\S/.test(line)) {
+          return (
+            <div key={idx} className="msg-subbullet-cont">
+              {renderInline(trimmed)}
+              {cursor}
+            </div>
+          );
+        }
+
         // 번호 목록 (1. 항목, 2. 항목 등)
         const numMatch = line.match(/^(\d+)\.\s+(.*)$/);
+        if (numMatch && numberedTitles) {
+          // 제목 전체를 ** **로 감싼 경우는 벗겨서 칩 배경 없이 제목 스타일만 적용
+          const titleText = numMatch[2].replace(/^\*\*(.+)\*\*$/, '$1');
+          return (
+            <div key={idx} className="msg-number-title">
+              <span className="msg-number-prefix">{numMatch[1]}.</span>
+              <span className="msg-number-title-text">
+                {renderInline(titleText)}
+                {cursor}
+              </span>
+            </div>
+          );
+        }
         if (numMatch) {
           return (
             <div key={idx} className="msg-number-item">

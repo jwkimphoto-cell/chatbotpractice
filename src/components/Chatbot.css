@@ -333,6 +333,58 @@
   flex: 1;
 }
 
+/* 하위 항목: "  · 기능: …" (문형 아래 한 단계 들여쓴 목록) */
+.formatted-message .msg-subbullet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 1px 0 1px 22px;
+  font-size: 0.95em;
+}
+
+.formatted-message .msg-subbullet-dot {
+  color: #64748b;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.formatted-message .msg-subbullet-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 하위 항목의 이어지는 줄 (초급 영어 설명 등) */
+.formatted-message .msg-subbullet-cont {
+  margin: 0 0 2px 34px;
+  font-size: 0.92em;
+  color: #475569;
+}
+
+/* 표현 연습 항목 제목: 대표 문장 (칩 배경 대신 굵은 글씨 + 왼쪽 강조선, 긴 문장도 자연스럽게 줄바꿈) */
+.formatted-message .msg-number-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 14px 0 4px 0;
+  padding: 2px 0 2px 8px;
+  border-left: 3px solid #2563eb;
+  font-weight: 700;
+  color: #1e3a8a;
+  line-height: 1.5;
+}
+
+.formatted-message .msg-number-title-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 제목 안 굵은 글씨는 칩 배경 없이 표시 */
+.message-row.assistant .formatted-message .msg-number-title .msg-bold {
+  background: none;
+  padding: 0;
+}
+
 .formatted-message .msg-divider {
   border: none;
   border-top: 1px solid #e2e8f0;
@@ -1742,6 +1794,35 @@
   .input-hint {
     flex-direction: column;
     gap: 2px;
+  }
+
+  /* 말풍선 글자 폭 확보: 표현 연습의 긴 대표 문장 제목이 3~4줄로 쪼개지지 않도록 */
+  .messages-container {
+    padding: 14px 10px;
+    gap: 12px;
+  }
+
+  .message-row {
+    max-width: 94%;
+    gap: 8px;
+  }
+
+  .message-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.9rem;
+  }
+
+  .message-bubble {
+    padding: 12px 14px;
+  }
+
+  .formatted-message .msg-subbullet-item {
+    margin-left: 14px;
+  }
+
+  .formatted-message .msg-subbullet-cont {
+    margin-left: 26px;
   }
 
   /* 범주 필터 칩이 가로로 숨지 않고 줄바꿈되도록 */
