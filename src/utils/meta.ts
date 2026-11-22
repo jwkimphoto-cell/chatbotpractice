@@ -27,6 +27,18 @@ export function isPassingVerdict(verdict: ReviewVerdict): boolean {
 const ALLOWED_CATEGORIES: NoteCategory[] = ['높임법', '완곡 표현', '보고 순서', '어휘·문법'];
 
 /**
+ * 표현 연습 문형 목록의 출처 표시([Y1-10], [Y2-9·추정], [보충], [보충·고정 표현], [격식])를 지웁니다.
+ * 프롬프트로 금지하지만 "문형: 보고드리겠습니다 [격식]"처럼 새어 나오는 경우가 있어 화면 표시 전에 한 번 더 거릅니다.
+ * 이메일 첨삭의 [담당자명]·[날짜] 같은 자리표시는 이 형태가 아니므로 남습니다. 표현 연습 화면에서만 사용합니다.
+ */
+const SOURCE_TAG_REGEX = /[ \t]*\[(?:Y\d+-\d+(?:·[^\]\n]*)?|보충(?:·[^\]\n]*)?|격식)\]/g;
+
+export function stripSourceTags(text: string): string {
+  if (!text) return '';
+  return text.replace(SOURCE_TAG_REGEX, '');
+}
+
+/**
  * 화면 표시용 텍스트 정제:
  * 1) [[NOTES]] 또는 [[RESULT]] 시작점부터 뒤쪽 전체를 숨김
  * 2) 스트리밍 중 마커 앞부분(예: "[[", "[[N", "[[NOTES", "[[R" 등)으로 끝나는 꼬리도 숨김

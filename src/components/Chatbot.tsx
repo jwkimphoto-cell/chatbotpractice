@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
 import { FormattedMessage } from './FormattedMessage';
-import { cleanDisplayContent, extractNotes, stripMetaForHistory, type ParsedNoteItem } from '../utils/meta';
+import { cleanDisplayContent, extractNotes, stripMetaForHistory, stripSourceTags, type ParsedNoteItem } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import './Chatbot.css';
 
@@ -359,7 +359,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({
       <div className="messages-container">
         {messages.map((msg) => {
           // [[NOTES]] 메타 블록과 스트리밍 중 마커 일부는 화면에서 숨김
-          const displayContent = cleanDisplayContent(msg.content);
+          // AI 응답에 새어 나온 문형 목록 출처 표시([격식], [Y2-9·추정] 등)도 지움
+          const cleaned = cleanDisplayContent(msg.content);
+          const displayContent = msg.role === 'assistant' ? stripSourceTags(cleaned) : cleaned;
           return (
             <div key={msg.id} className={`message-row ${msg.role}`}>
               <div className="message-avatar">
