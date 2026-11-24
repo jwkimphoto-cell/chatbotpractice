@@ -53,6 +53,8 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** 전송 중 표시 (상태 갱신 전에 두 번 눌러도 한 번만 보내도록 ref로 막음) */
+  const sendingRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -107,7 +109,8 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   // 메시지 전송 로직
   const handleSendMessage = async (customText?: string) => {
     const textToSend = (customText ?? input).trim();
-    if (!textToSend || isLoading || !selectedScene) return;
+    if (!textToSend || isLoading || sendingRef.current || !selectedScene) return;
+    sendingRef.current = true;
     const isFeedback = textToSend === FEEDBACK_TEXT;
 
     setErrorMessage(null);
@@ -188,6 +191,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
         return prev;
       });
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
       setStreamingId(null);
       onStreamingChange?.(false);

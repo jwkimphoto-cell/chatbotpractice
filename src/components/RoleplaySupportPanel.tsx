@@ -206,6 +206,8 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     if (cached) {
       console.info(`[RoleplaySupport] 캐시 사용: ${type} (API 호출 없음)`);
       applyData(cached);
+      // 초급 자동 starter는 처음부터 로딩 상태로 시작하므로, 캐시로 끝나도 로딩을 풀어 줌
+      if (alreadyLoading && !inFlightRef.current) setLoading(null);
       return;
     }
     if (inFlightRef.current) return;

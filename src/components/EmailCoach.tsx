@@ -58,6 +58,8 @@ export const EmailCoach: React.FC<EmailCoachProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** 전송 중 표시 (상태 갱신 전에 두 번 눌러도 한 번만 보내도록 ref로 막음) */
+  const sendingRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -97,7 +99,8 @@ export const EmailCoach: React.FC<EmailCoachProps> = ({
   // [첨삭 받기] 실행
   const handleSubmitEmail = async () => {
     const trimmedBody = body.trim();
-    if (!trimmedBody || isLoading) return;
+    if (!trimmedBody || isLoading || sendingRef.current) return;
+    sendingRef.current = true;
 
     setErrorMessage(null);
     setSaveSuccessMessage(null);
@@ -161,6 +164,7 @@ ${trimmedBody}`;
         setHasSubmitted(false);
       }
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
       setStreamingId(null);
       onStreamingChange?.(false);
@@ -170,7 +174,8 @@ ${trimmedBody}`;
   // 추가 질문 전송
   const handleSendFollowUp = async () => {
     const trimmed = followUpInput.trim();
-    if (!trimmed || isLoading) return;
+    if (!trimmed || isLoading || sendingRef.current) return;
+    sendingRef.current = true;
 
     setErrorMessage(null);
 
@@ -236,6 +241,7 @@ ${trimmedBody}`;
         return prev;
       });
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
       setStreamingId(null);
       onStreamingChange?.(false);
@@ -339,7 +345,7 @@ ${trimmedBody}`;
             <input
               type="text"
               className="email-text-input"
-              placeholder="예: [요청] 3분기 예산안 자료 송부 부탁드립니다"
+              placeholder="예: [요청] 회의 자료 송부 부탁드립니다"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
             />

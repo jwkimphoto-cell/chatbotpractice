@@ -27,8 +27,8 @@ function stripLevelTag(text: string): string {
 }
 
 interface IncomingMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
+  role: string;
+  content: unknown;
 }
 
 const ALLOWED_MODES = ['expression', 'roleplay', 'email', 'review', 'roleplay_support'] as const;
@@ -82,11 +82,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: '메시지는 최대 40개까지 전송할 수 있습니다.' });
     }
 
-    // 3. 개별 메시지 길이 검증 (최대 4,000자)
+    // 3. 개별 메시지 형식·길이 검증 (role은 user·assistant만, content는 문자열, 최대 4,000자)
     for (const msg of messages) {
-      if (msg && typeof msg.content === 'string' && msg.content.length > 4000) {
+      if (!msg || typeof msg !== 'object' || (msg.role !== 'user' && msg.role !== 'assistant') || typeof msg.content !== 'string') {
+        return res.status(400).json({ error: '메시지 형식이 올바르지 않습니다. role은 user 또는 assistant, content는 문자열이어야 합니다.' });
+      }
+      if (msg.content.length > 4000) {
         return res.status(400).json({ error: '메시지 길이는 4,000자를 초과할 수 없습니다.' });
       }
+    }
+
+    // 위 검증을 통과한 메시지 (role·content 타입 확정)
+    const msgs = messages as { role: 'user' | 'assistant'; content: string }[];
+
+    // 마지막 메시지 순서 검사: 도움 요청은 상대역의 말 다음, 나머지 모드는 학습자의 말 다음에만 응답함
+    const lastRole = msgs[msgs.length - 1].role;
+    if (mode !== 'roleplay_support' && lastRole !== 'user') {
+      return res.status(400).json({ error: '마지막 메시지는 학습자(user)의 메시지여야 합니다.' });
     }
 
     // 4. 모드별 서버 전용 instructions 조립 (프롬프트 주입 방지)
@@ -97,11 +109,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // "다른 표현" 요청이면 서버가 문형 목록에서 다음 세트 문형 3개를 직접 골라 안내를 덧붙임.
       // 클라이언트 텍스트는 주제·난이도(고정 값 중 하나)와 이미 쓴 문형 판별에만 쓰고,
       // instructions에는 서버 목록의 문형 형태와 고정 문구만 들어감.
-      const lastUser = [...messages]
+      const lastUser = [...msgs]
         .reverse()
         .find((m) => m && m.role === 'user' && typeof m.content === 'string');
       const usedPatterns = lastUser ? parseMoreRequest(lastUser.content) : null;
-      const ctx = findExpressionContext(messages);
+      const ctx = findExpressionContext(msgs);
       if (ctx && usedPatterns) {
         instructions += buildNextSetInstruction(ctx, chooseNextPatterns(ctx, usedPatterns));
       } else if (ctx && lastUser && isStartRequest(lastUser.content)) {
@@ -132,7 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (typeof sceneId !== 'string' || !Object.hasOwn(SERVER_SCENES, sceneId)) {
         return res.status(400).json({ error: '유효한 장면(sceneId)을 선택해 주세요.' });
       }
-      const last = messages[messages.length - 1];
+      const last = msgs[msgs.length - 1];
       if (!last || last.role !== 'assistant') {
         return res.status(400).json({ error: '도움은 상대역의 말 다음에만 요청할 수 있습니다. 마지막 메시지가 상대역(assistant)의 말이어야 합니다.' });
       }
@@ -156,8 +168,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 5. Responses API input 구성
     // 롤플레이: 이전 코드가 남긴 "[난이도: …]" 표시는 지우고 처리
     const isRoleplayMode = mode === 'roleplay' || mode === 'roleplay_support';
-    const inputItems = messages
-      .filter((m) => m && typeof m.content === 'string' && m.content.trim().length > 0)
+    const inputItems = msgs
+      .filter((m) => m.content.trim().length > 0)
       .map((m) => ({
         role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
         content: isRoleplayMode && m.role === 'user' ? stripLevelTag(m.content) : m.content,
@@ -169,10 +181,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 도움 사다리: 대화 기록 뒤에 서버가 만든 요청 메시지 하나를 덧붙임.
-    // 종류·난이도는 화이트리스트 값, 상대역의 말·학습자 발화는 서버가 messages에서 직접 뽑음 (input에만 넣고 instructions에는 넣지 않음)
+    // 종류·난이도는 화이트리스트 값, 상대역의 말·학습자 발화는 서버가 msgs에서 직접 뽑음 (input에만 넣고 instructions에는 넣지 않음)
     if (mode === 'roleplay_support') {
-      const lastAssistant = messages[messages.length - 1].content.trim();
-      const learnerSaid = messages
+      const lastAssistant = msgs[msgs.length - 1].content.trim();
+      const learnerSaid = msgs
         .filter((m) => m && m.role === 'user' && typeof m.content === 'string')
         .map((m) => stripLevelTag(m.content).trim())
         .filter((t) => t.length > 0);

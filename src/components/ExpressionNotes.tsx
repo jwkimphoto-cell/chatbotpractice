@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
 import {
   cleanDisplayContent,
@@ -60,6 +60,8 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
 
   // 세션 결과 통계
   const [sessionResults, setSessionResults] = useState<ReviewVerdict[]>([]);
+  /** 채점 요청 중 표시 (상태 갱신 전에 Enter를 두 번 눌러도 한 번만 보내도록 ref로 막음) */
+  const gradingRef = useRef(false);
   const [isSessionFinished, setIsSessionFinished] = useState<boolean>(false);
 
   const refreshNotes = useCallback(() => {
@@ -108,7 +110,8 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
 
   // 퀴즈 제출 (mode: 'review'로 API 호출)
   const handleSubmitAnswer = async () => {
-    if (!userAnswer.trim() || isGrading || !currentCard) return;
+    if (!userAnswer.trim() || isGrading || gradingRef.current || !currentCard) return;
+    gradingRef.current = true;
 
     setIsGrading(true);
     setGradeResponse('');
@@ -149,6 +152,7 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
       setIsSelfGradeMode(true);
       setGradeResponse('채점 서버와 연결할 수 없습니다. 모범 표현을 확인하고 직접 채점해 보세요.');
     } finally {
+      gradingRef.current = false;
       setIsGrading(false);
       onStreamingChange?.(false);
     }

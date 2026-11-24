@@ -6,11 +6,11 @@ import {
   collapseRepeatedReply,
   extractNotes,
   keepLastIntroSet,
-  stripMetaForHistory,
   stripSourceTags,
   type ParsedNoteItem,
 } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
+import { buildExpressionPayload } from '../utils/chatState';
 import {
   EMPTY_HISTORY,
   buildHistoryBlock,
@@ -93,6 +93,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** 전송 중 표시 (상태 갱신 전에 두 번 눌러도 한 번만 보내도록 ref로 막음) */
+  const sendingRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -137,10 +139,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({
 
   const handleSendMessage = async (textToSend?: string) => {
     const trimmed = (textToSend ?? input).trim();
-    if (!trimmed || isLoading) return;
+    if (!trimmed || isLoading || sendingRef.current) return;
+    sendingRef.current = true;
 
     setErrorMessage(null);
     setSaveSuccessMessage(null);
+    // 이전 채점의 노트 저장 후보는 새 메시지를 보내면 지움 (다음 응답과 섞여 보이지 않게)
+    setFeedbackNotes([]);
+    setSelectedNoteIndices(new Set());
 
     // "다른 표현"/"퀴즈 시작"이면 전송용 텍스트에만 이미 소개한 문형·대표 문장 블록을 붙임
     const historyBlock = isHistoryCommand(trimmed) ? buildHistoryBlock(introHistory) : '';
@@ -175,10 +181,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
 
     try {
       // API 전송용 메시지 목록 (role과 전송용 텍스트만 전달, placeholder 제외, 메타 블록 제거)
-      const apiPayload: ChatMessage[] = newMessages.map((m) => ({
-        role: m.role,
-        content: stripMetaForHistory(m.apiContent ?? m.content),
-      }));
+      const apiPayload = buildExpressionPayload(newMessages);
 
       const rawReply = await streamChatMessage(apiPayload, (chunk) => {
         appendDelta(assistantId, chunk);
@@ -215,6 +218,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
         return prev;
       });
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
       setStreamingId(null);
       onStreamingChange?.(false);

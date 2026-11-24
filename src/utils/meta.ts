@@ -78,13 +78,28 @@ export function stripLevelTag(text: string): string {
 }
 
 /**
+ * 내부 표시 제거 (모든 탭 화면 표시용):
+ * - 맨 앞 "[난이도: …]" 표시 (이전 버전 잔재)
+ * - 문형 목록 출처 표시([Y1-10], [Y2-9·추정], [보충], [격식])
+ * - 앱이 전송용 메시지에만 붙이는 블록([이미 소개한 문형]·[이미 쓴 대표 문장]·[도움 사용 기록])과 [서버 안내] 블록이
+ *   응답에 새어 나온 경우 그 블록(제목 줄 ~ 빈 줄 전까지)
+ * 이메일 첨삭의 [날짜]·[담당자명] 같은 자리표시는 이 형태가 아니므로 남습니다.
+ */
+const INTERNAL_BLOCK_REGEX = /^[ \t]*\[(?:이미 소개한 문형|이미 쓴 대표 문장|도움 사용 기록|서버 안내|이번 세트 문형[^\]\n]*)\][^\n]*(?:\n(?![ \t]*\n)[^\n]*)*\n?/gm;
+export function stripInternalMarkers(text: string): string {
+  if (!text) return '';
+  return stripSourceTags(stripLevelTag(text)).replace(INTERNAL_BLOCK_REGEX, '').replace(/\n{3,}/g, '\n\n');
+}
+
+/**
  * 화면 표시용 텍스트 정제:
+ * 0) 내부 표시 제거 (stripInternalMarkers)
  * 1) [[NOTES]] 또는 [[RESULT]] 시작점부터 뒤쪽 전체를 숨김
  * 2) 스트리밍 중 마커 앞부분(예: "[[", "[[N", "[[NOTES", "[[R" 등)으로 끝나는 꼬리도 숨김
  */
 export function cleanDisplayContent(text: string): string {
   if (!text) return '';
-  text = stripLevelTag(text);
+  text = stripInternalMarkers(text);
 
   // 1. 이미 완성되었거나 시작된 마커 위치 찾기
   const notesIndex = text.indexOf('[[NOTES]]');
@@ -359,12 +374,12 @@ const BEGINNER_MAX_EOJEOL = 5;
 
 /**
  * 초급 도움 범위 점검 (화면이 level을 알 때 추가로 검사). 문제가 있으면 이유, 없으면 null
- * 1) 초급 범위 밖 이유 문형: 'N 때문에·-기 때문에', '-(으)니까'
+ * 1) 초급 범위 밖 이유 문형: 'N 때문에·-기 때문에'(3권). '-(으)니까'는 2권 문형이라 허용하되 '죄송·감사' 앞의 '-(으)니까'는 실패
  * 2) '-ㅂ/습니다'를 탓하는 partial 보기 (초급에서는 '-ㅂ/습니다'도 맞는 높임말)
  * 3) 길이: 문장 틀·보기·모범 답이 2문장 이하, 문장당 5어절 이하 (빈칸 {{n}}은 한 어절로 셈.
  *    "죄송해요.", "안녕하세요.", "네." 같은 한 마디 인사·사과·대답 문장은 문장 수에 세지 않음)
  */
-const BEGINNER_REASON_FORM = /때문에|니까(?=[\s.,!?]|$)/;
+const BEGINNER_REASON_FORM = /때문에|니까\s*(?:죄송|감사|미안|고맙)/;
 const BLAME_FORMAL = /딱딱|격식|말투|말끝|끝맺음|formal|stiff/i;
 export function beginnerSupportIssue(data: SupportData): string | null {
   const sentences: string[] = [];

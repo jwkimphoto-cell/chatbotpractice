@@ -5,10 +5,11 @@
  * - docs/level-guide.md 3장 목록과 내용이 같아야 한다.
  */
 
-export type Topic = '보고' | '이메일' | '회의';
-export type Level = '초급' | '중급' | '고급';
+import { COMPOUND_NOUN_RULE, FORBIDDEN_WORDS, LEVELS, VOCAB, type Level } from './level-rules.js';
 
-const LEVELS: Level[] = ['초급', '중급', '고급'];
+export type Topic = '보고' | '이메일' | '회의';
+export type { Level };
+export { VOCAB };
 
 export interface PatternItem {
   /** 문형 형태 (예: V-을까요?) */
@@ -154,15 +155,6 @@ export const PATTERN_GROUPS: PatternGroup[] = [
     ],
   },
 ];
-/**
- * 난이도별 직장 어휘 목록 (유일한 원본). 프롬프트의 어휘 줄과 서버 어휘 안내가 이 데이터를 씀.
- * 위 단계 목록은 아래 단계 어휘를 포함하는 것으로 본다(중급 = 초급 + 중급 목록).
- */
-export const VOCAB: Record<Level, string[]> = {
-  초급: ["회사", "사무실", "회의", "회의실", "팀장님", "과장님", "메일", "전화", "자료", "보고서", "일", "컴퓨터", "복사", "커피", "오늘", "내일", "오전", "오후", "몇 시", "주말", "문제", "보내다"],
-  중급: ["일정", "출장", "손님", "고객", "거래처", "발표", "계획", "방법", "의견", "확인하다", "준비하다", "정리하다", "연락하다", "끝나다", "늦다", "바쁘다", "퇴근하다", "출근하다"],
-  고급: ["결과", "제품", "주문", "예약", "회신", "첨부 파일", "담당자", "참석하다", "제출하다", "변경하다", "결정하다"],
-};
 
 /** 서버 안내 끝에 붙이는 형식 안내 ("더 보기" 줄 누락 방지: 프롬프트 중간 지시보다 instructions 끝이 잘 지켜짐) */
 const FORMAT_REMINDER = `- 형식: 세 항목 모두 "- 문형:" 줄 아래에 "· 기능", "· 만들기", "· 더 보기" 줄을 넣습니다. "· 더 보기:" 줄은 어느 항목에서도 빼지 않습니다.`;
@@ -170,18 +162,15 @@ const FORMAT_REMINDER = `- 형식: 세 항목 모두 "- 문형:" 줄 아래에 "
 /** 서버 안내 끝에 붙이는 '-님' 사용 안내 ("저는 과장님입니다"처럼 자기에게 '-님'을 붙이는 오류 방지) */
 const HONORIFIC_REMINDER = `- 높임: 자기 이름·직책에는 '-님'을 붙이지 않습니다. 자기소개는 "저는 영업팀 마이클입니다", "저는 김민수 과장입니다"처럼 소속·이름·직책으로 하고, '-님'은 상대나 다른 사람(팀장님, 과장님)을 부르거나 가리킬 때만 씁니다. (예: "저는 과장님입니다" × → "저는 김민수 과장입니다" ○)`;
 
-/** 서버 안내용 어휘 안내: 이 난이도에서 쓸 수 있는 어휘(아래 단계 포함)와 쓰지 않을 위 단계 어휘 */
+/** 서버 안내용 어휘 안내: 이 난이도에서 쓸 수 있는 어휘(아래 단계 포함)와 쓰지 않을 위 단계 어휘 (원본: level-rules.ts) */
 function vocabInstruction(level: Level): string {
   const idx = LEVELS.indexOf(level);
   const allowed = LEVELS.slice(0, idx + 1).flatMap((l) => VOCAB[l]);
   const higher = LEVELS.slice(idx + 1).flatMap((l) => VOCAB[l]);
   const lines = [`- 어휘: ${level}에서는 아래 어휘를 우선 쓰고, 목록 밖 어휘는 같은 수준의 쉬운 말로 씁니다.`, `  · 쓸 수 있는 어휘: ${allowed.join(', ')}`];
   if (higher.length) lines.push(`  · 쓰지 않을 어휘(위 단계): ${higher.join(', ')} — 대표 문장과 "더 보기" 문장 어디에도 쓰지 않습니다.`);
-  lines.push(
-    level === '초급'
-      ? `  · 명사 겹침: 초급은 '회의 자료', '제품 자료'처럼 한자어 명사 두 개를 붙여 쓰지 않습니다. (예: "회의 자료"처럼 쓰지 않음) 단, 자기소개에서 소속을 말하는 '회사·업종 + 직원'(예: 회사 직원, 여행사 직원)은 예외로 초급에서도 씁니다.`
-      : `  · 명사 겹침: '회의 자료'처럼 한자어 명사 두 개를 붙인 말은 한 문장에 1개까지만 씁니다.`,
-  );
+  lines.push(`  · 명사 겹침: ${COMPOUND_NOUN_RULE}`);
+  lines.push(`  · 금지 어휘: ${FORBIDDEN_WORDS.join(', ')}`);
   return lines.join('\n');
 }
 
