@@ -404,36 +404,64 @@ const BEGINNER_MAX_EOJEOL = 5;
  */
 const BEGINNER_REASON_FORM = /때문에|니까\s*(?:죄송|감사|미안|고맙)/;
 const BLAME_FORMAL = /딱딱|격식|말투|말끝|끝맺음|formal|stiff/i;
-export function beginnerSupportIssue(data: SupportData): string | null {
+/** 초급 도움 위반 한 건. kind: 길이(문장 수·어절) / 어휘(위 단계 명사·금지 어휘) / 문형(3권 이상) / 내용(말투 탓, 쿠션어만 남은 문장) */
+export interface BeginnerIssue {
+  kind: 'length' | 'vocab' | 'form' | 'content';
+  text: string;
+}
+
+/**
+ * 낱말이 장면 핵심 어휘에 들어 있는지 (조사·활용이 붙어도 어절 첫머리가 같으면 같은 낱말로 봄).
+ * 핵심 어휘가 동사(…다)면 어간도 비교함 (예: '미루다' → '미루', '바쁘다' → '바쁘')
+ */
+export function coreAllows(word: string, coreVocab: string[] = []): boolean {
+  return coreVocab.some((c) => c === word || c.startsWith(word) || word.startsWith(c.endsWith('다') ? c.slice(0, -1) : c));
+}
+
+const BEGINNER_FORBIDDEN = ['경쟁력', '협력사', '납품', '분기', '예산 초과', '재발', '차질', '파악되'];
+
+/**
+ * 초급 도움 범위 점검: 위반을 모두 돌려줌(없으면 빈 배열). 화면은 위반 수로 두 결과 중 나은 쪽을 고름.
+ * @param coreVocab 장면 핵심 어휘 — 위 단계 명사 검사에서 통과시킴
+ */
+export function beginnerSupportIssues(data: SupportData, coreVocab: string[] = []): BeginnerIssue[] {
+  const issues: BeginnerIssue[] = [];
   const sentences: string[] = [];
   if (data.type === 'starter') {
     sentences.push(data.frame.template, ...data.choices.options.map((o) => o.text));
   } else if (data.type === 'frame') sentences.push(data.template);
   else if (data.type === 'choices') sentences.push(...data.options.map((o) => o.text));
   else if (data.type === 'model') sentences.push(data.text);
-  const bad = sentences.find((t) => BEGINNER_REASON_FORM.test(t));
-  if (bad) return `초급 범위 밖 이유 문형: "${bad}"`;
-  // 위 단계 명사 (예: "예약 문제" — 실제 응답 검증에서 반복됨). 어절 첫머리에서만 찾음
   for (const t of sentences) {
-    const w = BEGINNER_BANNED_NOUNS.find((n) => new RegExp(`(?:^|\\s)${n}`).test(t));
-    if (w) return `초급 범위 밖 어휘 '${w}': "${t}"`;
+    if (BEGINNER_REASON_FORM.test(t)) issues.push({ kind: 'form', text: `초급 범위 밖 이유 문형: "${t}"` });
+    for (const f of BEGINNER_REPLY_FORMS) if (f.test(t)) issues.push({ kind: 'form', text: `초급 범위 밖 문형 ${f.name}: "${t}"` });
+    // 위 단계 명사 (예: "예약 문제"). 어절 첫머리에서만 찾고, 장면 핵심 어휘는 통과
+    for (const n of BEGINNER_BANNED_NOUNS) {
+      if (new RegExp(`(?:^|\\s)${n}`).test(t) && !coreAllows(n, coreVocab)) issues.push({ kind: 'vocab', text: `초급 범위 밖 어휘 '${n}': "${t}"` });
+    }
+    for (const w of BEGINNER_FORBIDDEN) if (t.includes(w)) issues.push({ kind: 'vocab', text: `금지 어휘 '${w}': "${t}"` });
   }
   const options = data.type === 'starter' ? data.choices.options : data.type === 'choices' ? data.options : [];
   const blamed = options.find(
     (o) => o.verdict !== 'appropriate' && /니다(?=[\s.,!?]|$)/.test(o.text) && (BLAME_FORMAL.test(o.reason) || BLAME_FORMAL.test(o.reason_en)),
   );
-  if (blamed) return `'-ㅂ/습니다'를 탓하는 보기: "${blamed.text}" (${blamed.reason})`;
+  if (blamed) issues.push({ kind: 'content', text: `'-ㅂ/습니다'를 탓하는 보기: "${blamed.text}" (${blamed.reason})` });
   // 쿠션어·접속어만 떼어 낸 문장 (예: "하지만요.", "혹시요.") — 실제로 쓰지 않는 말
   const stub = sentences.flatMap((t) => splitSentences(t)).find((x) => /^(?:하지만|그런데|근데|혹시|그래서|그리고|그럼)요[.?!]?$/.test(x));
-  if (stub) return `쿠션어·접속어만 남은 문장: "${stub}"`;
+  if (stub) issues.push({ kind: 'content', text: `쿠션어·접속어만 남은 문장: "${stub}"` });
   for (const t of sentences) {
     const parts = splitSentences(t);
     const counted = parts.filter((x) => !SHORT_FORMULA.test(x)).length;
-    if (counted > BEGINNER_MAX_SENTENCES) return `문장 수 초과(${counted}문장, 최대 ${BEGINNER_MAX_SENTENCES}, 한 마디 인사·사과·대답 제외): "${t}"`;
-    const long = parts.find((x) => countEojeol(x) > BEGINNER_MAX_EOJEOL);
-    if (long) return `어절 수 초과(${countEojeol(long)}어절, 최대 ${BEGINNER_MAX_EOJEOL}): "${long}"`;
+    if (counted > BEGINNER_MAX_SENTENCES) issues.push({ kind: 'length', text: `문장 수 초과(${counted}문장, 최대 ${BEGINNER_MAX_SENTENCES}, 한 마디 인사·사과·대답 제외): "${t}"` });
+    // 길이는 문장마다 셈 (두 문장을 합쳐 세지 않음)
+    for (const x of parts) if (countEojeol(x) > BEGINNER_MAX_EOJEOL) issues.push({ kind: 'length', text: `어절 수 초과(${countEojeol(x)}어절, 최대 ${BEGINNER_MAX_EOJEOL}): "${x}"` });
   }
-  return null;
+  return issues;
+}
+
+/** 첫 번째 위반 문구 (없으면 null). 예전 호출부·검증 스크립트 호환용 */
+export function beginnerSupportIssue(data: SupportData, coreVocab: string[] = []): string | null {
+  return beginnerSupportIssues(data, coreVocab)[0]?.text ?? null;
 }
 
 /**
@@ -802,6 +830,7 @@ const BEGINNER_REPLY_FORMS: { name: string; test: (s: string) => boolean }[] = [
   { name: "'-고 있다'", test: (s) => /\S고\s+있(?:어|습|었|는)/.test(s) },
   { name: "'-(으)ㄹ 것 같다'", test: (s) => /것\s*같/.test(s) },
   { name: "'-(으)ㄹ 거예요'", test: (s) => /거예요|겁니다/.test(s) },
+  { name: "'-아/어야 하다'(4권)", test: (s) => /[가-힣]야\s*(?:해요|해|합니다|했어요|하고|해서|하는)(?=[\s.,!?]|$)/.test(s) },
 ];
 
 /**
@@ -811,7 +840,7 @@ const BEGINNER_REPLY_FORMS: { name: string; test: (s: string) => boolean }[] = [
  * - 3권 이상 문형, 위 단계 명사, 금지 어휘
  * @param learnerSaid 학습자가 이미 쓴 말. 학습자가 먼저 쓴 낱말을 상대역이 받아 말하는 것은 허용
  */
-export function beginnerReplyIssues(reply: string, learnerSaid: string[] = []): string[] {
+export function beginnerReplyIssues(reply: string, learnerSaid: string[] = [], coreVocab: string[] = []): string[] {
   const text = cleanDisplayContent(reply).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   if (!text) return [];
   const issues: string[] = [];
@@ -826,8 +855,54 @@ export function beginnerReplyIssues(reply: string, learnerSaid: string[] = []): 
   const learner = learnerSaid.join(' ');
   for (const w of BEGINNER_BANNED_NOUNS) {
     // 어절 첫머리에서만 찾음 (다른 낱말 안에 우연히 들어간 경우 제외)
-    if (new RegExp(`(?:^|\\s)${w}`).test(text) && !learner.includes(w)) issues.push(`위 단계 어휘 '${w}'`);
+    if (new RegExp(`(?:^|\\s)${w}`).test(text) && !learner.includes(w) && !coreAllows(w, coreVocab)) issues.push(`위 단계 어휘 '${w}'`);
   }
   for (const w of ['경쟁력', '협력사', '납품', '분기', '예산 초과', '재발', '차질', '파악되']) if (text.includes(w)) issues.push(`금지 어휘 '${w}'`);
   return issues;
+}
+
+/* ------------------------------------------------------------------ */
+/* 도움 응답 검사 결과 나누기: 구조 실패(오류 처리) / 난이도 실패(완화 처리)      */
+/* ------------------------------------------------------------------ */
+
+/** 도움 응답 안에 새어 나온 내부 표시 (출처 표시, 서버·화면이 붙이는 블록 이름) */
+const SUPPORT_INTERNAL = /\[(?:Y\d+-\d+[^\]]*|보충[^\]]*|격식|난이도:[^\]]*|이미 소개한 문형|이미 쓴 대표 문장|도움 사용 기록|서버 안내|도움 요청|지금 대답할 상대역의 말|학습자가 이미 말한 내용|문장 틀)\]/;
+
+/** 문자열 필드 중 내부 표시가 있는 첫 위치 (없으면 null) */
+export function internalMarkerField(v: unknown, path = ''): string | null {
+  if (typeof v === 'string') return SUPPORT_INTERNAL.test(v) ? path || '(값)' : null;
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) {
+      const hit = internalMarkerField(v[i], `${path}[${i}]`);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (v && typeof v === 'object') {
+    for (const [k, x] of Object.entries(v)) {
+      const hit = internalMarkerField(x, path ? `${path}.${k}` : k);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/**
+ * 난이도 실패 목록 (완화 처리 대상, 없으면 빈 배열).
+ * - 초급: 초급 범위 점검(길이·어휘·문형·내용) — 장면 핵심 어휘는 통과
+ * - 중급·고급: 문장마다 최대 어절
+ * - 모든 난이도: 학습자가 이미 말한 문장 반복
+ */
+export function supportDifficultyIssues(data: SupportData, level: string, learnerSaid: string[] = [], coreVocab: string[] = []): string[] {
+  const out = level === '초급' ? beginnerSupportIssues(data, coreVocab).map((i) => i.text) : [supportLengthIssue(data, level)].filter((x): x is string => !!x);
+  const rep = repeatsLearner(data, learnerSaid);
+  if (rep) out.push(rep);
+  return out;
+}
+
+/** 두 결과 중 난이도 위반이 적은 쪽 (같으면 나중 결과) */
+export function pickLessDifficult<T>(a: { data: T; issues: string[] } | null, b: { data: T; issues: string[] } | null): { data: T; issues: string[] } | null {
+  if (!a) return b;
+  if (!b) return a;
+  return b.issues.length <= a.issues.length ? b : a;
 }

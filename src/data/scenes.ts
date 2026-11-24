@@ -5,6 +5,11 @@ export interface SceneCardData {
   situation: string;
   goal: string;
   firstMessage: string;
+  /**
+   * 장면 핵심 어휘: 이 장면을 말하려면 꼭 필요한 낱말(장면당 8개 이하). 초급에서도 쓸 수 있고,
+   * 초급 어휘·위 단계 명사 검사가 통과시킴(활용형·조사가 붙은 형태 포함). 서버(api/_lib/scenes.ts)와 화면(src/data/scenes.ts) 값이 같아야 함(테스트로 확인)
+   */
+  coreVocab: string[];
   /** 초급 롤플레이 첫 대사 (짧은 해요체) */
   openingLineBeginner: string;
   badge: string;
@@ -13,6 +18,7 @@ export interface SceneCardData {
 export const SCENES: SceneCardData[] = [
   {
     id: 'report-delay',
+    coreVocab: ['보고서', '늦다', '자료', '다음 주', '화요일', '금요일'],
     title: '일정 지연 보고',
     counterpart: '김 팀장(직속 상사)',
     situation: '금요일까지 내기로 한 시장 조사 보고서가 자료 수집 지연으로 다음 주 화요일로 늦어질 것 같음',
@@ -23,6 +29,7 @@ export const SCENES: SceneCardData[] = [
   },
   {
     id: 'report-progress',
+    coreVocab: ['행사', '준비', '장소', '계약', '문제', '퍼센트'],
     title: '업무 중간보고',
     counterpart: '김 팀장',
     situation: '행사 준비가 약 70% 진행됐고, 장소 계약에 문제가 하나 있음',
@@ -33,6 +40,7 @@ export const SCENES: SceneCardData[] = [
   },
   {
     id: 'meeting-disagree',
+    coreVocab: ['광고', 'SNS', '예산', '손님', '방법', '신문'],
     title: '회의에서 반대 의견 부드럽게 말하기',
     counterpart: '박 과장(회의 진행자)',
     situation: '신제품 홍보를 SNS 광고로만 하자는 제안에 예산·주 고객층 문제로 다른 의견이 있음',
@@ -43,6 +51,7 @@ export const SCENES: SceneCardData[] = [
   },
   {
     id: 'meeting-schedule',
+    coreVocab: ['회의', '목요일', '출장', '시간', '바꾸다', '괜찮다'],
     title: '회의 일정 조율',
     counterpart: '이 대리(다른 팀 동료)',
     situation: '목요일 오후 회의에 출장 때문에 참석하기 어려움',
@@ -53,6 +62,7 @@ export const SCENES: SceneCardData[] = [
   },
   {
     id: 'client-postpone',
+    coreVocab: ['미팅', '약속', '내일', '다음 주', '미루다', '죄송하다', '사정', '괜찮다'],
     title: '거래처 미팅 연기 요청(전화)',
     counterpart: '최 부장(거래처 한빛상사)',
     situation: '내일 오전 미팅을 내부 사정으로 다음 주로 미뤄야 함',
@@ -63,6 +73,7 @@ export const SCENES: SceneCardData[] = [
   },
   {
     id: 'colleague-request',
+    coreVocab: ['자료', '예산', '부탁', '언제까지', '바쁘다', '보내다'],
     title: '다른 부서에 자료 협조 요청',
     counterpart: '정 대리(재무팀)',
     situation: '다음 주 회의에 쓸 예산 자료가 필요하지만 상대도 바쁜 시기임',

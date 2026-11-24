@@ -174,7 +174,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       // 다시 받는 동안 isLoading이 유지되어 도움 패널은 열리지 않고, 말풍선은 비워서 입력 중 표시를 보여 줌
       if (difficulty === '초급' && !isFeedback) {
         const learnerSaid = newMessages.filter((m) => m.role === 'user').map((m) => m.content);
-        const firstIssues = beginnerReplyIssues(reply, learnerSaid);
+        const firstIssues = beginnerReplyIssues(reply, learnerSaid, selectedScene.coreVocab);
         if (firstIssues.length > 0) {
           if (import.meta.env.DEV) console.warn('[Roleplay] 초급 상대역 말이 기준을 넘어 다시 받음', { 문제: firstIssues, 원래말: reply });
           setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: '' } : m)));
@@ -184,7 +184,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
               (chunk) => appendDelta(assistantId, chunk),
               { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty, simplify: true },
             );
-            const picked = pickBeginnerReply(reply, firstIssues, retry, beginnerReplyIssues(retry, learnerSaid));
+            const picked = pickBeginnerReply(reply, firstIssues, retry, beginnerReplyIssues(retry, learnerSaid, selectedScene.coreVocab));
             reply = picked.text;
             if (picked.issues.length > 0 && import.meta.env.DEV) console.warn('[Roleplay] 다시 받은 말도 초급 기준을 넘음 (나은 쪽 표시)', picked.issues);
           } catch (retryError) {
@@ -526,6 +526,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
               onUse={handleSupportUse}
               onFirstChoice={handleFirstChoice}
               onRefresh={handleRefresh}
+              coreVocab={selectedScene.coreVocab}
             />
           )}
 

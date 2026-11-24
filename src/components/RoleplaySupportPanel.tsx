@@ -2,13 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChatApiError, streamChatMessage, type ChatMessage, type RoleplayLevel, type SupportType } from '../api/chat';
 import {
   alignFrameWithAnswer,
-  beginnerSupportIssue,
   koreanInEnglishFields,
   extractSupport,
+  internalMarkerField,
   normalizeUtterance,
-  repeatsLearner,
+  pickLessDifficult,
   replyToMatches,
-  supportLengthIssue,
+  supportDifficultyIssues,
   type SupportChoiceOption,
   type SupportChoicesBody,
   type SupportData,
@@ -65,6 +65,8 @@ interface Props {
   onFirstChoice: (verdict: SupportVerdict) => void;
   /** 초급 [🔄 다른 도움 받기]를 쓴 순간 (턴당 1회) */
   onRefresh?: () => void;
+  /** 장면 핵심 어휘 (초급 어휘·위 단계 명사 검사가 통과시킴) */
+  coreVocab?: string[];
 }
 
 interface Results {
@@ -76,11 +78,13 @@ interface Results {
 
 type ErrorKind = 'parse' | 'rate';
 /** 실패 분류 (개발 모드 로그용) */
-type FailKind = 'http' | 'replyTo' | 'level' | 'repeat' | 'length' | SupportFailKind;
-/** soft: 길이만 넘은 중급·고급 도움. 다시 요청해도 넘으면 버리지 않고 보여 줌 (화면 안정성 우선) */
-type FetchResult = { ok: true; data: SupportData } | { ok: false; kind: FailKind; error?: string; soft?: SupportData } | { ok: false; kind: 'skip' };
-/** 자동으로 한 번 다시 요청하는 실패 (starter는 모든 실패를 다시 요청, frame·choices는 구조 오류도 다시 요청) */
-const RETRY_KINDS: FailKind[] = ['placeholder', 'replyTo', 'level', 'repeat', 'length'];
+/** 구조 실패: 그대로 오류 처리 대상 (다시 받아도 실패하면 대체 경로 → 그래도 실패하면 "도움을 불러오지 못했어요.") */
+type StructureKind = 'http' | 'replyTo' | 'internal' | SupportFailKind;
+/**
+ * 한 번 받은 결과. ok면 구조는 맞고, issues는 난이도 실패(길이·초급 어휘·문형·반복) 목록 — 비어 있지 않으면 완화 처리
+ * (1회 다시 받은 뒤 위반이 적은 쪽을 보여 줌, 오류 화면을 띄우지 않음)
+ */
+type FetchResult = { ok: true; data: SupportData; issues: string[] } | { ok: false; kind: StructureKind; error?: string } | { ok: false; kind: 'skip' };
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -103,6 +107,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   onUse,
   onFirstChoice,
   onRefresh,
+  coreVocab = [],
 }) => {
   const isBeginner = level === '초급';
   const autoStarter = isBeginner && !disabled;
@@ -155,7 +160,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   };
 
   /** 실패 사유 기록 (개발 모드) */
-  const logFail = (kind: FailKind, type: SupportType, lastText: string, raw: string, detail: string) => {
+  const logFail = (kind: StructureKind, type: SupportType, lastText: string, raw: string, detail: string) => {
     if (!import.meta.env.DEV) return;
     console.warn('[RoleplaySupport] 도움 실패', {
       분류: kind === 'schema' ? `schema:${detail}` : kind,
@@ -187,6 +192,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
       logFail('http', type, last.content, '', e instanceof ChatApiError ? `status ${e.status}` : String(e));
       return { ok: false, kind: 'http' };
     }
+    // ① 구조 검사 (실패하면 오류 처리 대상)
     const parsed = extractSupport(reply, type);
     if (!parsed.ok) {
       logFail(parsed.kind, type, last.content, reply, parsed.error);
@@ -196,32 +202,31 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
       logFail('replyTo', type, last.content, reply, `replyTo="${parsed.data.replyTo}"`);
       return { ok: false, kind: 'replyTo' };
     }
-    // 초급: 범위 밖 이유 문형, '-ㅂ/습니다'를 탓하는 보기
-    const issue = isBeginner ? beginnerSupportIssue(parsed.data) : null;
-    if (issue) {
-      logFail('level', type, last.content, reply, issue);
-      return { ok: false, kind: 'level' };
+    const internal = internalMarkerField(parsed.data);
+    if (internal) {
+      logFail('internal', type, last.content, reply, `${internal}에 내부 표시`);
+      return { ok: false, kind: 'internal' };
     }
-    // 학습자가 이미 말한 문장을 다시 넣은 도움 (대답 대상 규칙 위반)
+    // ② 난이도 검사 (실패해도 버리지 않음 — 위반 목록만 붙여 돌려줌)
     const learnerSaid = history.filter((m) => m.role === 'user').map((m) => m.content);
-    const repeat = repeatsLearner(parsed.data, learnerSaid);
-    if (repeat) {
-      logFail('repeat', type, last.content, reply, repeat);
-      return { ok: false, kind: 'repeat' };
-    }
-    // 중급·고급: 문장당 최대 어절
-    const long = isBeginner ? null : supportLengthIssue(parsed.data, level);
-    if (long) {
-      logFail('length', type, last.content, reply, long);
-      return { ok: false, kind: 'length', soft: parsed.data };
-    }
+    const issues = supportDifficultyIssues(parsed.data, level, learnerSaid, coreVocab);
     // 영어 칸의 한글: 실패로 처리하지 않고 기록만 (개발 모드)
     const koInEn = isBeginner ? koreanInEnglishFields(parsed.data) : [];
     if (koInEn.length > 0 && import.meta.env.DEV) console.warn('[RoleplaySupport] 영어 칸에 한글이 섞임 (표시는 그대로)', koInEn);
-    return { ok: true, data: parsed.data };
+    return { ok: true, data: parsed.data, issues };
   };
 
-  /** 도움 요청 (한 번에 하나만). 캐시가 있으면 API를 부르지 않음. [다시 시도]도 이 함수로 최신 기록을 다시 읽어 보냄 */
+  /** 난이도 위반이 남은 채로 보여 줄 때 위반 내용을 콘솔에 남김 */
+  const warnDifficulty = (type: SupportType, issues: string[]) => {
+    if (issues.length > 0) console.warn(`[RoleplaySupport] ${type}: 난이도 위반이 남은 도움을 표시함 (다시 받은 결과 중 위반이 적은 쪽)`, issues);
+  };
+
+  /**
+   * 도움 요청 (한 번에 하나만). 캐시가 있으면 API를 부르지 않음. [다시 시도]도 이 함수로 최신 기록을 다시 읽어 보냄.
+   * - 난이도 실패만 있으면 1회 다시 받고 위반이 적은 쪽을 보여 줌 (오류 화면 없음)
+   * - 구조 실패면 1회 다시 받음. 두 번 다 구조 실패면 starter는 대체 경로(문장 틀·보기 따로), 그 밖의 종류는 오류
+   * - "도움을 불러오지 못했어요."는 구조 실패가 이어져 보여 줄 결과가 하나도 없을 때만
+   */
   const request = async (type: SupportType, alreadyLoading = false, variant = false) => {
     const cacheKey = `${turnKey}:${type}`;
     const cached = cache.get(cacheKey);
@@ -236,35 +241,37 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     inFlightRef.current = true;
     if (!alreadyLoading) setLoading(type);
     setError(null);
+    const show = (data: SupportData, issues: string[]) => {
+      warnDifficulty(type, issues);
+      cache.set(cacheKey, data);
+      applyData(data);
+    };
     try {
-      let r = await fetchOnce(type, undefined, variant);
-      // starter의 문장 틀 빈칸 개수 오류·빈칸이 문장 끝인 오류는 같은 요청을 다시 보내도 반복되는 경우가 많아 재요청 없이 바로 대체 경로로 감
-      const skipRetry =
-        type === 'starter' && !r.ok && r.kind === 'schema' && 'error' in r && /빈칸 개수|빈칸이 문장 끝/.test(r.error ?? '');
-      if (skipRetry) console.info('[RoleplaySupport] starter 문장 틀 빈칸 오류 → 재요청 없이 대체 경로로');
-      const retryable = !r.ok && r.kind !== 'skip' && (RETRY_KINDS.includes(r.kind) || type === 'starter' || ((type === 'frame' || type === 'choices') && r.kind === 'schema'));
-      if (retryable && !skipRetry) {
-        console.info(`[RoleplaySupport] ${type} 실패(${r.ok ? '' : r.kind}) → 한 번 다시 요청`);
-        const first = r;
-        r = await fetchOnce(type, undefined, variant);
-        // 두 번 모두 길이만 넘었으면 버리지 않고 마지막 결과를 보여 줌
-        if (!r.ok && r.kind === 'length' && 'soft' in r && r.soft) r = { ok: true, data: r.soft };
-        else if (!r.ok && r.kind !== 'skip' && !first.ok && first.kind === 'length' && 'soft' in first && first.soft && r.kind !== 'replyTo') r = { ok: true, data: first.soft };
+      let best: { data: SupportData; issues: string[] } | null = null;
+      const r1 = await fetchOnce(type, undefined, variant);
+      if (!r1.ok && r1.kind === 'skip') return;
+      if (r1.ok) best = { data: r1.data, issues: r1.issues };
+      // starter 문장 틀의 빈칸 개수·문장 끝 빈칸 오류는 같은 요청을 다시 보내도 반복되는 경우가 많아 바로 대체 경로로 감
+      const skipRetry = type === 'starter' && !r1.ok && r1.kind === 'schema' && 'error' in r1 && /빈칸 개수|빈칸이 문장 끝/.test(r1.error ?? '');
+      if (!skipRetry && (!r1.ok || r1.issues.length > 0)) {
+        console.info(`[RoleplaySupport] ${type} ${r1.ok ? `난이도 위반 ${r1.issues.length}건` : `구조 실패(${r1.kind})`} → 한 번 다시 요청`);
+        const r2 = await fetchOnce(type, undefined, variant);
+        if (!r2.ok && r2.kind === 'skip') return;
+        if (r2.ok) best = pickLessDifficult(best, { data: r2.data, issues: r2.issues });
       }
-      if (r.ok) {
-        cache.set(cacheKey, r.data);
-        applyData(r.data);
+      if (best) {
+        show(best.data, best.issues);
         return;
       }
-      if (r.kind === 'skip') return;
 
-      // 대체 경로: starter가 2번 연속 실패하면 문장 틀과 보기 선택을 따로 1번씩 요청
+      // 여기까지 오면 구조 실패가 이어짐. starter는 문장 틀과 보기 선택을 따로 1번씩 요청(대체 경로)
       if (type === 'starter') {
-        console.info('[RoleplaySupport] starter 2회 실패 → 문장 틀·보기 선택을 따로 요청');
+        console.info('[RoleplaySupport] starter 구조 실패 → 문장 틀·보기 선택을 따로 요청');
         const f = await fetchOnce('frame');
         if (!f.ok && f.kind === 'skip') return;
         // 보기를 요청할 때 방금 받은 문장 틀을 같이 보내 정답 보기를 그 틀에 맞추게 함
         const c = f.ok && f.data.type === 'frame' ? await fetchOnce('choices', f.data.template) : null;
+        if (c && !c.ok && c.kind === 'skip') return;
         if (f.ok && c && c.ok && f.data.type === 'frame' && c.data.type === 'choices') {
           const answer = c.data.options.find((o) => o.verdict === 'appropriate')?.text ?? '';
           const aligned = alignFrameWithAnswer({ template: f.data.template, blanks: f.data.blanks }, answer);
@@ -279,11 +286,9 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
             frame: aligned.frame,
             choices: { options: c.data.options },
           };
-          cache.set(cacheKey, combined);
-          applyData(combined);
+          show(combined, [...f.issues, ...c.issues]);
           return;
         }
-        if (c && !c.ok && c.kind === 'skip') return;
       }
       setError({ kind: 'parse', type });
     } catch (e) {
