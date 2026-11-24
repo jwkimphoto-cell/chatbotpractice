@@ -72,6 +72,11 @@ export function keepLastIntroSet(text: string): string {
   return head + text.slice(starts[starts.length - 1]);
 }
 
+/** 메시지 앞의 "[난이도: …]" 표시 제거 (이전 버전이 롤플레이 첫 발화에 붙이던 내부 표시) */
+export function stripLevelTag(text: string): string {
+  return (text || '').replace(/^\s*\[난이도:[^\]]*\]\s*/, '');
+}
+
 /**
  * 화면 표시용 텍스트 정제:
  * 1) [[NOTES]] 또는 [[RESULT]] 시작점부터 뒤쪽 전체를 숨김
@@ -79,6 +84,7 @@ export function keepLastIntroSet(text: string): string {
  */
 export function cleanDisplayContent(text: string): string {
   if (!text) return '';
+  text = stripLevelTag(text);
 
   // 1. 이미 완성되었거나 시작된 마커 위치 찾기
   const notesIndex = text.indexOf('[[NOTES]]');
@@ -102,7 +108,7 @@ export function cleanDisplayContent(text: string): string {
  */
 export function stripMetaForHistory(text: string): string {
   if (!text) return '';
-  return text
+  return stripLevelTag(text)
     .replace(/\[\[NOTES\]\][\s\S]*?\[\[\/NOTES\]\]/g, '')
     .replace(/\[\[RESULT\]\][\s\S]*?\[\[\/RESULT\]\]/g, '')
     // 닫는 마커 없이 잘린 메타 블록은 시작 마커부터 끝까지 제거
@@ -272,14 +278,17 @@ export type SupportData = SupportMeta &
     | { type: 'starter'; frame: SupportFrameBody; choices: SupportChoicesBody }
   );
 
-export type SupportParseResult = { ok: true; data: SupportData } | { ok: false; error: string };
+/** 실패 분류: 잘림 / JSON 파싱 / 구조 검증 / 빈칸 기호가 frame.template 밖에 있음 */
+export type SupportFailKind = 'truncated' | 'parse' | 'schema' | 'placeholder';
+export type SupportParseResult = { ok: true; data: SupportData } | { ok: false; error: string; kind: SupportFailKind };
+type InnerResult = { ok: true; data: SupportData } | { ok: false; error: string };
 
 const isNonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 const asStr = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** 발화 비교용 정규화: 공백·문장부호·기호를 모두 지움 */
 export function normalizeUtterance(text: string): string {
-  return (text || '').replace(/[\s\p{P}\p{S}]/gu, '');
+  return stripLevelTag(text || '').replace(/[\s\p{P}\p{S}]/gu, '');
 }
 
 /**
@@ -290,7 +299,114 @@ export function replyToMatches(replyTo: string, actual: string): boolean {
   const a = normalizeUtterance(replyTo);
   const b = normalizeUtterance(actual);
   if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  // 모델이 상대역 발화 중 한 문장(대개 마지막 질문)만 복사한 경우
+  return (actual || '').split(/(?<=[.?!。？！])\s*/).some((sentence) => {
+    const n = normalizeUtterance(sentence);
+    return n.length > 0 && n === a;
+  });
+}
+
+/*
+ * 어절 세기 (docs/level-guide.md 1-2와 같은 기준):
+ * - 괄호 안 글은 빼고 셈
+ * - 시각 표현(두 시, 오전 열 시, 세 시 반, 3시 30분)은 띄어 써도 한 어절
+ * - '-(으)ㄹ 수(도) 있다', '-고 있다', '-아/어 주다'(보내 주세요)는 앞 동사와 함께, 'N 중이다'는 앞 명사와 함께 한 어절
+ */
+const NUM_WORD = '(?:열(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉)?|한|두|세|네|다섯|여섯|일곱|여덟|아홉|몇|\\d+)';
+const TIME_EXPR = new RegExp(
+  `(?:(?:오전|오후|새벽|아침|저녁|밤)\\s+)?${NUM_WORD}\\s*시(?:\\s+(?:반|${NUM_WORD}\\s*분|(?:십|이십|삼십|사십|오십)\\s*분))?`,
+  'g',
+);
+const AEO_VOWELS = new Set([0, 1, 4, 5, 6, 9, 10, 14, 15]); // ㅏ ㅐ ㅓ ㅔ ㅕ ㅘ ㅙ ㅝ ㅞ
+const NOUNS_LIKE_AEO = new Set(['전화', '사과', '회사', '의자', '차']);
+/** '-아/어' 연결형처럼 끝나는 말인지 (보내, 확인해, 기다려, 읽어 → true / 전화, 자료, 좀, 자료를 → false) */
+function isAeoForm(word: string): boolean {
+  if (NOUNS_LIKE_AEO.has(word)) return false;
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  if (code < 0 || code > 11171) return false;
+  return code % 28 === 0 && AEO_VOWELS.has(Math.floor(code / 28) % 21);
+}
+
+export function countEojeol(sentence: string): number {
+  const s = sentence
+    .replace(/\([^)]*\)/g, '')
+    .trim()
+    .replace(TIME_EXPR, (m) => m.replace(/\s+/g, ''))
+    .replace(/(\S+)\s+수도?\s+(있\S*)/g, '$1수$2')
+    .replace(/(\S+고)\s+(있\S*)/g, '$1$2')
+    .replace(/(\S+)\s+(중(?:입|이|인)\S*)/g, '$1$2')
+    // '-아/어 주다': 앞 말이 '-아/어' 꼴(받침 없이 ㅏ·ㅓ·ㅕ·ㅐ·ㅔ·ㅘ·ㅙ·ㅝ·ㅞ로 끝남)일 때만 합침
+    // ("전화 주세요", "자료 좀 주세요", "자료를 주세요"처럼 명사·조사 뒤의 '주다'는 그대로)
+    .replace(/(\S+)\s+((?:주(?:세요|십시오|시겠|시면|셔서|실|셨|세|어|었|고|면|ㄹ)|줘|줄|줍)\S*)/g, (m, a: string, b: string) =>
+      isAeoForm(a) ? a + b : m);
+  return s ? s.split(/\s+/).length : 0;
+}
+
+/** 문장 나누기 (. ? ! 뒤에서 끊음, 빈 문장 제외) */
+export function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.?!。？！])\s+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+}
+
+const BEGINNER_MAX_SENTENCES = 2;
+/** 문장 수에 세지 않는 한 마디 인사·사과·대답 (예: "죄송해요.", "안녕하세요.", "네."). 반말 오답 보기용 반말형도 포함 */
+const SHORT_FORMULA =
+  /^(?:죄송해요|죄송합니다|미안해요|미안합니다|미안해|안녕하세요|안녕|네|예|응|아니요|아니|감사합니다|고마워요|고맙습니다|고마워|알겠어요|알겠습니다|알겠어)[.?!]?$/;
+const BEGINNER_MAX_EOJEOL = 5;
+
+/**
+ * 초급 도움 범위 점검 (화면이 level을 알 때 추가로 검사). 문제가 있으면 이유, 없으면 null
+ * 1) 초급 범위 밖 이유 문형: 'N 때문에·-기 때문에', '-(으)니까'
+ * 2) '-ㅂ/습니다'를 탓하는 partial 보기 (초급에서는 '-ㅂ/습니다'도 맞는 높임말)
+ * 3) 길이: 문장 틀·보기·모범 답이 2문장 이하, 문장당 5어절 이하 (빈칸 {{n}}은 한 어절로 셈.
+ *    "죄송해요.", "안녕하세요.", "네." 같은 한 마디 인사·사과·대답 문장은 문장 수에 세지 않음)
+ */
+const BEGINNER_REASON_FORM = /때문에|니까(?=[\s.,!?]|$)/;
+const BLAME_FORMAL = /딱딱|격식|말투|말끝|끝맺음|formal|stiff/i;
+export function beginnerSupportIssue(data: SupportData): string | null {
+  const sentences: string[] = [];
+  if (data.type === 'starter') {
+    sentences.push(data.frame.template, ...data.choices.options.map((o) => o.text));
+  } else if (data.type === 'frame') sentences.push(data.template);
+  else if (data.type === 'choices') sentences.push(...data.options.map((o) => o.text));
+  else if (data.type === 'model') sentences.push(data.text);
+  const bad = sentences.find((t) => BEGINNER_REASON_FORM.test(t));
+  if (bad) return `초급 범위 밖 이유 문형: "${bad}"`;
+  const options = data.type === 'starter' ? data.choices.options : data.type === 'choices' ? data.options : [];
+  const blamed = options.find(
+    (o) => o.verdict !== 'appropriate' && /니다(?=[\s.,!?]|$)/.test(o.text) && (BLAME_FORMAL.test(o.reason) || BLAME_FORMAL.test(o.reason_en)),
+  );
+  if (blamed) return `'-ㅂ/습니다'를 탓하는 보기: "${blamed.text}" (${blamed.reason})`;
+  // 쿠션어·접속어만 떼어 낸 문장 (예: "하지만요.", "혹시요.") — 실제로 쓰지 않는 말
+  const stub = sentences.flatMap((t) => splitSentences(t)).find((x) => /^(?:하지만|그런데|근데|혹시|그래서|그리고|그럼)요[.?!]?$/.test(x));
+  if (stub) return `쿠션어·접속어만 남은 문장: "${stub}"`;
+  for (const t of sentences) {
+    const parts = splitSentences(t);
+    const counted = parts.filter((x) => !SHORT_FORMULA.test(x)).length;
+    if (counted > BEGINNER_MAX_SENTENCES) return `문장 수 초과(${counted}문장, 최대 ${BEGINNER_MAX_SENTENCES}, 한 마디 인사·사과·대답 제외): "${t}"`;
+    const long = parts.find((x) => countEojeol(x) > BEGINNER_MAX_EOJEOL);
+    if (long) return `어절 수 초과(${countEojeol(long)}어절, 최대 ${BEGINNER_MAX_EOJEOL}): "${long}"`;
+  }
+  return null;
+}
+
+/**
+ * 영어 칸(*_en)에 한글이 섞였는지 (화면이 붙이는 "+ 이/가" 같은 조사 안내는 빼고 봄). 섞인 필드 경로 목록
+ * 사소한 문제라 실패로 처리하지 않고 개발 모드 기록용으로만 씀
+ */
+export function koreanInEnglishFields(data: SupportData): string[] {
+  const hits: string[] = [];
+  const walk = (v: unknown, path: string, key: string) => {
+    if (typeof v === 'string') {
+      if (key.endsWith('_en') && /[가-힣]/.test(v.replace(/\s*\+\s*[가-힣]{1,2}\/[가-힣]{1,2}\s*$/, ''))) hits.push(path);
+    } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`, key));
+    else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, path ? `${path}.${k}` : k, k));
+  };
+  walk(data, '', '');
+  return hits;
 }
 
 /** 짧은 문자열 해시 (도움 캐시 키용, djb2) */
@@ -331,9 +447,15 @@ export function stripParticleGuide(hint: string): string {
 /** 힌트가 숫자·개수를 가리키는지 (예: "숫자", "문제의 수", "몇 개", "number") — 이런 빈칸에는 '이/가'가 붙지 않음 */
 const QUANTITY_HINT = /숫자|개수|몇|(?:^|\s|의\s?)수(?:$|\s|\))|\bnumber\b|how many|\bcount\b/i;
 
-export function normalizeBlankHint(template: string, blank: SupportBlank): SupportBlank {
+/**
+ * @param particle 틀에서 빈칸 바로 뒤의 조사를 화면이 뺀 경우 그 조사 쌍(예: '이/가'). 있으면 그대로 안내로 붙임
+ */
+export function normalizeBlankHint(template: string, blank: SupportBlank, particle?: string): SupportBlank {
   const hint = stripParticleGuide(blank.hint);
   let hintEn = stripParticleGuide(blank.hint_en).replace(/[.\s]+$/, '');
+  if (particle) {
+    return { ...blank, hint: `${hint || blank.hint} + ${particle}`, hint_en: hintEn ? `${hintEn} + ${particle}` : hintEn };
+  }
   const isQuantity = QUANTITY_HINT.test(hint) || QUANTITY_HINT.test(hintEn);
   const needsSubject = !isQuantity && new RegExp(`\\{\\{${blank.id}\\}\\}\\s+(?:있|없)`).test(template);
   if (!needsSubject) return { ...blank, hint: hint || blank.hint, hint_en: hintEn };
@@ -341,7 +463,12 @@ export function normalizeBlankHint(template: string, blank: SupportBlank): Suppo
   return { ...blank, hint: `${hint || blank.hint} + 이/가`, hint_en: hintEn };
 }
 
-/** {{n}} 번호와 blanks id 일치, 빈칸 1~3개, hint 필수 */
+const PARTICLE_PAIR: Record<string, string> = { 이: '이/가', 가: '이/가', 을: '을/를', 를: '을/를', 은: '은/는', 는: '은/는', 과: '과/와', 와: '과/와' };
+const P2 = '\\(?(이|가|을|를|은|는|과|와)\\)?';
+/** 빈칸 바로 뒤의 고정 조사 (한 형태, "이/가"처럼 두 형태, "(이)" 모두). 뒤에는 공백·문장부호·끝이 와야 함 ("{{1}}이에요"는 해당 없음) */
+const FIXED_PARTICLE_AFTER_BLANK = new RegExp(`\\{\\{(\\d+)\\}\\}${P2}(?:\\s*/\\s*\\(?(?:이|가|을|를|은|는|과|와)\\)?)?(?=[\\s.,!?)]|$)`, 'g');
+
+/** {{n}} 번호와 blanks id 일치, 빈칸 1~3개, hint 필수. 빈칸 뒤 고정 조사는 고쳐 씀 */
 export function validateFrame(v: unknown): SupportFrameBody | string {
   if (!v || typeof v !== 'object') return 'frame이 객체가 아님';
   const f = v as Record<string, unknown>;
@@ -349,11 +476,17 @@ export function validateFrame(v: unknown): SupportFrameBody | string {
   const nums = [...f.template.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
   const uniq = [...new Set(nums)].sort((a, b) => a - b);
   if (uniq.length < 1 || uniq.length > 3) return '빈칸 개수가 1~3개가 아님';
-  // 빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 고정돼 있으면, 학습자가 바르게 채워도 틀린 문장이 됨 (예: "{{2}}이 있습니다")
-  // "{{2}}이/가 있어요"처럼 두 형태를 적어 둔 것도 같은 문제
-  if (/\{\{\d+\}\}\(?(?:이|가|을|를|은|는|과|와)\)?(?=[\s.,!?/)]|$)/.test(f.template)) return '빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 있음';
+  // 빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 고정돼 있으면(예: "{{2}}이 있습니다", "{{2}}이/가 있어요", "{{2}}(이) 있어요")
+  // 학습자가 바르게 채워도 틀린 문장이 될 수 있음 → 버리지 않고 화면이 고쳐 씀:
+  // 틀에서 조사를 빼고, 그 빈칸 힌트에 "+ 이/가"처럼 조사 쌍을 붙여 학습자가 조사까지 쓰게 함
+  const repairedParticle: Record<number, string> = {};
+  // 낱말 일부만 빈칸인 경우("{{1}}요일에" → 학습자가 '화요일'을 쓰면 '화요일요일') → 빈칸이 낱말 전체가 되게 '요일'을 뺌
+  const template = f.template.replace(/\{\{(\d+)\}\}요일/g, '{{$1}}').replace(FIXED_PARTICLE_AFTER_BLANK, (_m, n: string, p: string) => {
+    repairedParticle[Number(n)] = PARTICLE_PAIR[p];
+    return `{{${n}}}`;
+  });
   // 빈칸이 문장 끝에 있으면 학습자가 서술어·어미까지 직접 만들어야 함 (예: "장소 계약에 {{2}}.")
-  if (/\{\{\d+\}\}\s*(?:[.?!。]|$)/.test(f.template.trim())) return '빈칸이 문장 끝에 있음 (빈칸 뒤에 서술어가 없음)';
+  if (/\{\{\d+\}\}\s*(?:[.?!。]|$)/.test(template.trim())) return '빈칸이 문장 끝에 있음 (빈칸 뒤에 서술어가 없음)';
   if (!Array.isArray(f.blanks)) return 'blanks가 배열이 아님';
   const blanks: SupportBlank[] = [];
   for (const raw of f.blanks) {
@@ -362,12 +495,12 @@ export function validateFrame(v: unknown): SupportFrameBody | string {
     const id = typeof b.id === 'number' ? b.id : Number(b.id);
     if (!Number.isInteger(id)) return 'blank id가 숫자가 아님';
     if (!isNonEmpty(b.hint)) return `blank ${id}의 hint 없음`;
-    blanks.push(normalizeBlankHint(f.template, { id, hint: b.hint.trim(), hint_en: asStr(b.hint_en).trim() }));
+    blanks.push(normalizeBlankHint(template, { id, hint: b.hint.trim(), hint_en: asStr(b.hint_en).trim() }, repairedParticle[id]));
   }
   const ids = [...new Set(blanks.map((b) => b.id))].sort((a, b) => a - b);
   if (ids.length !== blanks.length) return 'blank id 중복';
   if (JSON.stringify(ids) !== JSON.stringify(uniq)) return 'template의 {{n}}과 blanks id가 다름';
-  return { template: f.template.trim(), blanks };
+  return { template: template.trim(), blanks };
 }
 
 /** 보기 정확히 3개, verdict는 appropriate·partial·inappropriate 각 1개 */
@@ -389,6 +522,8 @@ export function validateChoices(v: unknown): SupportChoicesBody | string {
       reason_en: asStr(o.reason_en).trim(),
     });
   }
+  // 문장이 똑같은 보기가 둘 이상이면 학습자가 고를 수 없음 (공백·문장부호만 다른 것도 같은 문장으로 봄)
+  if (new Set(options.map((o) => normalizeUtterance(o.text))).size !== options.length) return '문장이 똑같은 보기가 있음';
   const count = (vd: SupportVerdict) => options.filter((o) => o.verdict === vd).length;
   if (count('appropriate') !== 1 || count('partial') !== 1 || count('inappropriate') !== 1) {
     return 'verdict 구성이 appropriate·partial·inappropriate 각 1개가 아님';
@@ -396,11 +531,114 @@ export function validateChoices(v: unknown): SupportChoicesBody | string {
   return { options };
 }
 
+/** 문자열 밖의 { } 균형 (양수면 닫는 괄호가 모자람 → 잘린 응답) */
+function braceBalance(body: string): number {
+  let depth = 0;
+  let inStr = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) {
+      if (ch === '\\') i++;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth--;
+  }
+  return depth + (inStr ? 1 : 0);
+}
+
+const PLACEHOLDER = /\{\{\s*\d+\s*\}\}/;
+
+/** frame.template(키 'template')을 뺀 모든 문자열 필드에서 빈칸 기호를 찾아 위치를 돌려줌 */
+function findPlaceholder(v: unknown, path: string): string | null {
+  if (typeof v === 'string') return PLACEHOLDER.test(v) ? path : null;
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) {
+      const hit = findPlaceholder(v[i], `${path}[${i}]`);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (v && typeof v === 'object') {
+    for (const [k, val] of Object.entries(v)) {
+      if (k === 'template') continue;
+      const hit = findPlaceholder(val, path ? `${path}.${k}` : k);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 /**
- * 도움 응답 파싱 + 구조 검증. 실패해도 예외를 던지지 않고 { ok: false }를 돌려줌(화면은 [다시 시도] 표시).
- * @param expected 요청한 도움 종류 (응답의 type과 같아야 함)
+ * 도움 응답 파싱 + 구조 검증 + 실패 분류.
+ * - truncated: 닫는 [[/SUPPORT]]가 없거나 괄호가 닫히지 않음 (응답이 중간에 끊김)
+ * - parse: JSON을 찾지 못했거나 파싱 실패
+ * - schema: 필드 구조 검증 실패
+ * - placeholder: frame.template 밖(보기·힌트·모범 답 등)에 {{n}}이 있음
  */
 export function extractSupport(text: string, expected: SupportKind): SupportParseResult {
+  const raw = text || '';
+  if (raw.includes('[[SUPPORT]]') && !raw.includes('[[/SUPPORT]]')) {
+    return { ok: false, kind: 'truncated', error: '닫는 [[/SUPPORT]] 없음' };
+  }
+  const r = extractSupportInner(raw, expected);
+  if (!r.ok) {
+    if (r.error === 'JSON 파싱 실패') {
+      const body = supportJsonText(raw) ?? '';
+      return { ok: false, kind: braceBalance(body) > 0 ? 'truncated' : 'parse', error: r.error };
+    }
+    return { ok: false, kind: r.error === 'JSON을 찾지 못함' || r.error === 'JSON이 객체가 아님' ? 'parse' : 'schema', error: r.error };
+  }
+  const hit = findPlaceholder(r.data, '');
+  if (hit) return { ok: false, kind: 'placeholder', error: `${hit}에 빈칸 기호({{n}})가 있음` };
+  if (r.data.type === 'starter') {
+    // 정답 보기가 문장 틀을 채운 문장과 다른 구조면 학습자가 빈칸에 무엇을 넣을지 알 수 없음 → 실패.
+    // 같은 구조면 정답 보기의 빈칸 값 끝 조사를 틀에 옮겨 적음
+    const answer = r.data.choices.options.find((o) => o.verdict === 'appropriate')?.text ?? '';
+    const aligned = alignFrameWithAnswer(r.data.frame, answer);
+    if (!aligned.matched) return { ok: false, kind: 'schema', error: 'starter: 문장 틀과 정답 보기가 같은 구조가 아님' };
+    return { ok: true, data: { ...r.data, frame: aligned.frame } };
+  }
+  return r;
+}
+
+/*
+ * 문장 틀과 정답 보기 맞추기.
+ * 정답 보기를 틀에 대어 빈칸 값을 뽑고, 값이 바뀌지 않는 조사(에·에서·까지·부터·에게·한테)로 끝나는데
+ * 틀의 빈칸 뒤에 그 조사가 없으면 틀에 조사를 옮겨 적음. (예: 틀 "{{1}} 출장 중이에요" + 정답 "목요일에 출장 중이에요"
+ * → 틀 "{{1}}에 출장 중이에요") 학습자가 힌트대로 명사만 써도 정답과 같은 문장이 되게 하기 위함.
+ * matched: 정답 보기가 틀을 채운 문장과 같은 구조인지 (대체 경로에서 틀과 보기를 따로 받을 때 확인용)
+ */
+const CARRY_PARTICLES = ['에서', '에게', '한테', '까지', '부터', '에'];
+const stripPunct = (t: string) => t.replace(/[.,!?。？！"'“”‘’]/g, '').trim();
+export function alignFrameWithAnswer(frame: SupportFrameBody, answer: string): { frame: SupportFrameBody; matched: boolean } {
+  const parts = stripPunct(frame.template).split(/(\{\{\d+\}\})/);
+  const ids: number[] = [];
+  const pattern = parts
+    .map((p) => {
+      const m = p.match(/^\{\{(\d+)\}\}$/);
+      if (m) {
+        ids.push(Number(m[1]));
+        // 빈칸 값은 공백이 아닌 글자로 시작하고 끝나야 함 (문장 사이 공백 하나가 빈칸 값으로 잡히지 않게)
+        return '(\\S(?:.*?\\S)?)';
+      }
+      return p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+    })
+    .join('');
+  const hit = stripPunct(answer).match(new RegExp(`^${pattern}$`));
+  if (!hit) return { frame, matched: false };
+  let template = frame.template;
+  ids.forEach((id, i) => {
+    const value = hit[i + 1].trim();
+    const after = template.split(`{{${id}}}`)[1] ?? '';
+    const p = CARRY_PARTICLES.find((x) => value.endsWith(x) && value.length > x.length);
+    if (p && !after.startsWith(p)) template = template.replace(`{{${id}}}`, `{{${id}}}${p}`);
+  });
+  return { frame: { ...frame, template }, matched: true };
+}
+
+/** 파싱 + 구조 검증 (실패해도 예외를 던지지 않음). expected: 요청한 도움 종류 (응답의 type과 같아야 함) */
+function extractSupportInner(text: string, expected: SupportKind): InnerResult {
   const body = supportJsonText(text || '');
   if (!body) return { ok: false, error: 'JSON을 찾지 못함' };
   let parsed: unknown;

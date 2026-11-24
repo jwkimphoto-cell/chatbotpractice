@@ -21,6 +21,11 @@ import {
 
 export { WORKPLACE_KOREAN_SYSTEM_PROMPT };
 
+/** 메시지 앞의 "[난이도: …]" 표시 제거 (이전 버전 클라이언트가 붙이던 표시) */
+function stripLevelTag(text: string): string {
+  return text.replace(/^\s*\[난이도:[^\]]*\]\s*/, '');
+}
+
 interface IncomingMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -53,12 +58,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { mode: rawMode, sceneId, messages, level, supportType } = (req.body || {}) as {
+    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate } = (req.body || {}) as {
       mode?: string;
       sceneId?: string;
       messages?: IncomingMessage[];
       level?: string;
       supportType?: string;
+      frameTemplate?: unknown;
     };
 
     // 1. 모드 검사 (기본값: 'expression')
@@ -107,7 +113,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (typeof sceneId !== 'string' || !Object.hasOwn(SERVER_SCENES, sceneId)) {
         return res.status(400).json({ error: '유효한 장면(sceneId)을 선택해 주세요.' });
       }
-      instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId]);
+      // 난이도는 요청 본문의 level(화이트리스트)로 받아 instructions에 넣음 (대화 기록에 "[난이도: …]"를 붙이지 않음)
+      if (typeof level !== 'string' || !(ALLOWED_LEVELS as readonly string[]).includes(level)) {
+        return res.status(400).json({ error: '난이도(level)는 초급, 중급, 고급 중 하나여야 합니다.' });
+      }
+      instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId], level as RoleplayLevel);
     } else if (mode === 'roleplay_support') {
       // 도움 사다리: level·supportType·sceneId는 화이트리스트 값만 허용, instructions는 서버 데이터로만 조립
       if (typeof level !== 'string' || !(ALLOWED_LEVELS as readonly string[]).includes(level)) {
@@ -126,6 +136,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!last || last.role !== 'assistant') {
         return res.status(400).json({ error: '도움은 상대역의 말 다음에만 요청할 수 있습니다. 마지막 메시지가 상대역(assistant)의 말이어야 합니다.' });
       }
+      // 대체 경로의 choices 요청: 먼저 받은 문장 틀 (input에만 넣음, instructions에는 넣지 않음)
+      if (frameTemplate !== undefined) {
+        if (supportType !== 'choices' || typeof frameTemplate !== 'string' || frameTemplate.length > 300 || !/\{\{\d+\}\}/.test(frameTemplate)) {
+          return res.status(400).json({ error: 'frameTemplate은 choices 요청에서만, {{n}} 빈칸이 있는 300자 이하 문장으로 보낼 수 있습니다.' });
+        }
+      }
       instructions = buildRoleplaySupportInstructions(
         SERVER_SCENES[sceneId],
         level as RoleplayLevel,
@@ -138,12 +154,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 5. Responses API input 구성
+    // 롤플레이: 이전 코드가 남긴 "[난이도: …]" 표시는 지우고 처리
+    const isRoleplayMode = mode === 'roleplay' || mode === 'roleplay_support';
     const inputItems = messages
       .filter((m) => m && typeof m.content === 'string' && m.content.trim().length > 0)
       .map((m) => ({
         role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-        content: m.content,
-      }));
+        content: isRoleplayMode && m.role === 'user' ? stripLevelTag(m.content) : m.content,
+      }))
+      .filter((m) => m.content.trim().length > 0);
 
     if (inputItems.length === 0) {
       return res.status(400).json({ error: '전송할 유효한 메시지가 없습니다.' });
@@ -155,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const lastAssistant = messages[messages.length - 1].content.trim();
       const learnerSaid = messages
         .filter((m) => m && m.role === 'user' && typeof m.content === 'string')
-        .map((m) => m.content.replace(/^\[난이도:[^\]]*\]\s*/, '').trim())
+        .map((m) => stripLevelTag(m.content).trim())
         .filter((t) => t.length > 0);
       inputItems.push({
         role: 'user' as const,
@@ -163,6 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `[도움 요청] 종류: ${supportType} / 난이도: ${level}`,
           `[지금 대답할 상대역의 말] ${lastAssistant}`,
           `[학습자가 이미 말한 내용] ${learnerSaid.length > 0 ? learnerSaid.join(' / ') : '없음'}`,
+          ...(typeof frameTemplate === 'string' ? [`[문장 틀] ${frameTemplate}`] : []),
         ].join('\n'),
       });
     }

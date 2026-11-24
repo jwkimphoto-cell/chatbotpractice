@@ -19,6 +19,8 @@ export interface StreamChatOptions {
   level?: RoleplayLevel;
   /** roleplay_support 전용 */
   supportType?: SupportType;
+  /** roleplay_support choices 전용: 대체 경로에서 먼저 받은 문장 틀 (정답 보기를 이 틀에 맞추게 함) */
+  frameTemplate?: string;
 }
 
 /** 서버 오류 응답. status로 429(한도 초과) 등을 구분할 수 있음 */
@@ -58,12 +60,14 @@ export async function streamChatMessage(
     sceneId?: string;
     level?: RoleplayLevel;
     supportType?: SupportType;
+    frameTemplate?: string;
   } = {
     messages,
     ...(options?.mode ? { mode: options.mode } : {}),
     ...(options?.sceneId ? { sceneId: options.sceneId } : {}),
     ...(options?.level ? { level: options.level } : {}),
     ...(options?.supportType ? { supportType: options.supportType } : {}),
+    ...(options?.frameTemplate ? { frameTemplate: options.frameTemplate } : {}),
   };
 
   const response = await fetch('/api/chat', {

@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChatApiError, streamChatMessage, type ChatMessage, type RoleplayLevel, type SupportType } from '../api/chat';
 import {
+  alignFrameWithAnswer,
+  beginnerSupportIssue,
+  koreanInEnglishFields,
   extractSupport,
   normalizeUtterance,
   replyToMatches,
@@ -10,6 +13,7 @@ import {
   type SupportFrameBody,
   type SupportHint,
   type SupportModel,
+  type SupportFailKind,
   type SupportVerdict,
 } from '../utils/meta';
 
@@ -18,7 +22,10 @@ import {
  * - 부모가 상대역 발화마다 key를 바꿔 새로 마운트함 → 이전 턴의 도움은 자동으로 사라짐
  * - 부모는 상대역 응답 스트리밍이 끝나고 내용이 비어 있지 않을 때만 이 패널을 마운트함
  * - 요청 직전에 getHistory()로 최신 대화 기록을 읽고, 마지막 상대역 발화가 targetText와 같을 때만 보냄
- * - 응답의 replyTo가 targetText와 다르면 버리고 자동으로 한 번만 다시 요청함 (두 번째도 다르면 [다시 시도])
+ * - 응답의 replyTo가 다르거나 보기·힌트 등에 {{n}}이 있거나 초급 범위 점검(beginnerSupportIssue)에 걸리면 버리고 자동으로 한 번만 다시 요청함 (두 번째도 실패하면 [다시 시도])
+ * - starter는 어떤 실패든 한 번 다시 요청하고, 2번 연속 실패하면 frame과 choices를 따로 1번씩 요청함(대체 경로)
+ *   단, 첫 실패가 문장 틀의 빈칸 개수 오류나 빈칸이 문장 끝인 오류면 다시 요청하지 않고 바로 대체 경로로 감
+ * - 실패하면 개발 모드에서 console.warn으로 분류·종류·마지막 상대역 발화·응답 앞 300자를 남김 (화면에는 원문을 보이지 않음)
  * - 캐시 키는 turnKey(상대역 발화 순번 + 발화 해시) + 도움 종류. 새 턴이 되면 이전 턴 항목은 지움
  * - 도움 요청·응답은 롤플레이 대화 기록에 넣지 않음 (부모의 messages를 읽기만 함)
  */
@@ -63,6 +70,11 @@ interface Results {
 }
 
 type ErrorKind = 'parse' | 'rate';
+/** 실패 분류 (개발 모드 로그용) */
+type FailKind = 'http' | 'replyTo' | 'level' | SupportFailKind;
+type FetchResult = { ok: true; data: SupportData } | { ok: false; kind: FailKind; error?: string } | { ok: false; kind: 'skip' };
+/** 자동으로 한 번 다시 요청하는 실패 (starter는 모든 실패를 다시 요청) */
+const RETRY_KINDS: FailKind[] = ['placeholder', 'replyTo', 'level'];
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -95,7 +107,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   const [error, setError] = useState<{ kind: ErrorKind; type: SupportType } | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
 
-  // 🔘 보기 선택 상태
+  // 🔘 보기 선택 상태 (처음과 새 보기를 받을 때는 선택 없음 = 빈 배열)
   const [choiceOrder, setChoiceOrder] = useState<SupportChoiceOption[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   // ✏️ 문장 틀 입력값
@@ -118,10 +130,12 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     if (data.type === 'starter') {
       setResults((r) => ({ ...r, frame: data.frame, choices: data.choices }));
       setChoiceOrder(shuffle(data.choices.options));
+      setPicked([]);
       setOpened((o) => [...new Set([...o, 'frame' as StepType, 'choices' as StepType])]);
     } else if (data.type === 'choices') {
       setResults((r) => ({ ...r, choices: { options: data.options } }));
       setChoiceOrder(shuffle(data.options));
+      setPicked([]);
     } else if (data.type === 'frame') {
       setResults((r) => ({ ...r, frame: { template: data.template, blanks: data.blanks } }));
     } else if (data.type === 'hint') {
@@ -131,7 +145,61 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     }
   };
 
-  /** 도움 요청 (한 번에 하나만). 캐시가 있으면 API를 부르지 않음 */
+  /** 실패 사유 기록 (개발 모드) */
+  const logFail = (kind: FailKind, type: SupportType, lastText: string, raw: string, detail: string) => {
+    if (!import.meta.env.DEV) return;
+    console.warn('[RoleplaySupport] 도움 실패', {
+      분류: kind === 'schema' ? `schema:${detail}` : kind,
+      상세: detail,
+      supportType: type,
+      마지막상대역발화: lastText,
+      응답앞300자: raw.slice(0, 300),
+    });
+  };
+
+  /**
+   * 한 번 요청하고 검증까지. 429는 그대로 던짐(바깥에서 "잠시 후" 안내).
+   * 요청 직전에 getHistory()로 최신 기록을 읽고, 마지막 상대역 발화가 이 패널의 대상과 다르면 보내지 않음(skip)
+   */
+  const fetchOnce = async (type: SupportType, frameTemplate?: string): Promise<FetchResult> => {
+    const history = getHistory();
+    const last = history[history.length - 1];
+    if (!last || last.role !== 'assistant' || !last.content.trim() || normalizeUtterance(last.content) !== normalizeUtterance(targetText)) {
+      console.warn('[RoleplaySupport] 마지막 상대역 발화가 이 도움의 대상과 달라 요청하지 않음');
+      return { ok: false, kind: 'skip' };
+    }
+    if (import.meta.env.DEV) console.debug(`[RoleplaySupport] 도움 요청(${type}) — 마지막 상대역 발화:`, last.content);
+    console.info(`[RoleplaySupport] API 요청: ${type}`);
+    let reply = '';
+    try {
+      reply = await streamChatMessage(history, () => {}, { mode: 'roleplay_support', sceneId, level, supportType: type, frameTemplate });
+    } catch (e) {
+      if (e instanceof ChatApiError && e.status === 429) throw e;
+      logFail('http', type, last.content, '', e instanceof ChatApiError ? `status ${e.status}` : String(e));
+      return { ok: false, kind: 'http' };
+    }
+    const parsed = extractSupport(reply, type);
+    if (!parsed.ok) {
+      logFail(parsed.kind, type, last.content, reply, parsed.error);
+      return { ok: false, kind: parsed.kind, error: parsed.error };
+    }
+    if (!replyToMatches(parsed.data.replyTo, targetText)) {
+      logFail('replyTo', type, last.content, reply, `replyTo="${parsed.data.replyTo}"`);
+      return { ok: false, kind: 'replyTo' };
+    }
+    // 초급: 범위 밖 이유 문형, '-ㅂ/습니다'를 탓하는 보기
+    const issue = isBeginner ? beginnerSupportIssue(parsed.data) : null;
+    if (issue) {
+      logFail('level', type, last.content, reply, issue);
+      return { ok: false, kind: 'level' };
+    }
+    // 영어 칸의 한글: 실패로 처리하지 않고 기록만 (개발 모드)
+    const koInEn = isBeginner ? koreanInEnglishFields(parsed.data) : [];
+    if (koInEn.length > 0 && import.meta.env.DEV) console.warn('[RoleplaySupport] 영어 칸에 한글이 섞임 (표시는 그대로)', koInEn);
+    return { ok: true, data: parsed.data };
+  };
+
+  /** 도움 요청 (한 번에 하나만). 캐시가 있으면 API를 부르지 않음. [다시 시도]도 이 함수로 최신 기록을 다시 읽어 보냄 */
   const request = async (type: SupportType, alreadyLoading = false) => {
     const cacheKey = `${turnKey}:${type}`;
     const cached = cache.get(cacheKey);
@@ -145,36 +213,50 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     if (!alreadyLoading) setLoading(type);
     setError(null);
     try {
-      // replyTo가 다르면 한 번만 자동으로 다시 요청 (무한 재시도 금지)
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        // 요청 직전에 최신 대화 기록을 읽고, 마지막 상대역 발화가 이 패널의 대상과 같은지 다시 확인
-        const history = getHistory();
-        const last = history[history.length - 1];
-        if (!last || last.role !== 'assistant' || !last.content.trim() || normalizeUtterance(last.content) !== normalizeUtterance(targetText)) {
-          console.warn('[RoleplaySupport] 마지막 상대역 발화가 이 도움의 대상과 달라 요청하지 않음');
-          return;
-        }
-        if (import.meta.env.DEV) {
-          console.debug(`[RoleplaySupport] 도움 요청(${type}, ${attempt}번째) — 마지막 상대역 발화:`, last.content);
-        }
-        console.info(`[RoleplaySupport] API 요청: ${type}`);
-        const reply = await streamChatMessage(history, () => {}, { mode: 'roleplay_support', sceneId, level, supportType: type });
-        const parsed = extractSupport(reply, type);
-        if (!parsed.ok) {
-          console.warn('[RoleplaySupport] 도움 응답 파싱 실패:', parsed.error, reply);
-          setError({ kind: 'parse', type });
-          return;
-        }
-        if (!replyToMatches(parsed.data.replyTo, targetText)) {
-          console.warn(`[RoleplaySupport] replyTo 불일치 (${attempt}번째):`, parsed.data.replyTo, '≠', targetText);
-          if (attempt === 1) continue;
-          setError({ kind: 'parse', type });
-          return;
-        }
-        cache.set(cacheKey, parsed.data);
-        applyData(parsed.data);
+      let r = await fetchOnce(type);
+      // starter의 문장 틀 빈칸 개수 오류·빈칸이 문장 끝인 오류는 같은 요청을 다시 보내도 반복되는 경우가 많아 재요청 없이 바로 대체 경로로 감
+      const skipRetry =
+        type === 'starter' && !r.ok && r.kind === 'schema' && 'error' in r && /빈칸 개수|빈칸이 문장 끝/.test(r.error ?? '');
+      if (skipRetry) console.info('[RoleplaySupport] starter 문장 틀 빈칸 오류 → 재요청 없이 대체 경로로');
+      if (!r.ok && r.kind !== 'skip' && !skipRetry && (type === 'starter' || RETRY_KINDS.includes(r.kind))) {
+        console.info(`[RoleplaySupport] ${type} 실패(${r.kind}) → 한 번 다시 요청`);
+        r = await fetchOnce(type);
+      }
+      if (r.ok) {
+        cache.set(cacheKey, r.data);
+        applyData(r.data);
         return;
       }
+      if (r.kind === 'skip') return;
+
+      // 대체 경로: starter가 2번 연속 실패하면 문장 틀과 보기 선택을 따로 1번씩 요청
+      if (type === 'starter') {
+        console.info('[RoleplaySupport] starter 2회 실패 → 문장 틀·보기 선택을 따로 요청');
+        const f = await fetchOnce('frame');
+        if (!f.ok && f.kind === 'skip') return;
+        // 보기를 요청할 때 방금 받은 문장 틀을 같이 보내 정답 보기를 그 틀에 맞추게 함
+        const c = f.ok && f.data.type === 'frame' ? await fetchOnce('choices', f.data.template) : null;
+        if (f.ok && c && c.ok && f.data.type === 'frame' && c.data.type === 'choices') {
+          const answer = c.data.options.find((o) => o.verdict === 'appropriate')?.text ?? '';
+          const aligned = alignFrameWithAnswer({ template: f.data.template, blanks: f.data.blanks }, answer);
+          if (!aligned.matched && import.meta.env.DEV) {
+            console.warn('[RoleplaySupport] 대체 경로: 문장 틀과 정답 보기의 구조가 다름', { 틀: f.data.template, 정답보기: answer });
+          }
+          const combined: SupportData = {
+            type: 'starter',
+            replyTo: f.data.replyTo,
+            intent: f.data.intent || c.data.intent,
+            intent_en: f.data.intent_en || c.data.intent_en,
+            frame: aligned.frame,
+            choices: { options: c.data.options },
+          };
+          cache.set(cacheKey, combined);
+          applyData(combined);
+          return;
+        }
+        if (c && !c.ok && c.kind === 'skip') return;
+      }
+      setError({ kind: 'parse', type });
     } catch (e) {
       console.error('[RoleplaySupport] 도움 요청 오류:', e);
       if (e instanceof ChatApiError && e.status === 429) {

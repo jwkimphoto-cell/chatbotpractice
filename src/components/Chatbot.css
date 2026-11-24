@@ -1981,9 +1981,21 @@
   color: #1f2937;
 }
 
-.support-choice:hover:not(:disabled) {
-  border-color: #2563eb;
-  background-color: #eff6ff;
+/* 선택 전 모양: 마우스를 올려도 선택된 것처럼(파란 테두리) 보이지 않게 배경만 살짝 바꿈 */
+@media (hover: hover) {
+  .support-choice:hover:not(:disabled) {
+    background-color: #f8fafc;
+  }
+}
+
+/* 키보드 포커스 표시는 선택 상태와 분리 (마우스 클릭으로는 테두리를 그리지 않음) */
+.support-choice:focus {
+  outline: none;
+}
+
+.support-choice:focus-visible {
+  outline: 2px dashed #64748b;
+  outline-offset: 2px;
 }
 
 .support-choice:disabled {

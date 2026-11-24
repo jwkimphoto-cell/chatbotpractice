@@ -7,6 +7,18 @@ export interface ServerScene {
   firstMessage: string;
   /** 초급 롤플레이 첫 대사 (짧은 해요체) */
   openingLineBeginner: string;
+  /**
+   * 초급용 상황 문구 (선택). 기본 상황 문구에 초급에서 쓰지 않는 겹친 명사가 있어 모델이 그대로 따라 쓰는 경우에 둠.
+   * 난이도가 초급이면 상대역·도움 프롬프트가 이 문구를 씀 (없으면 situation)
+   */
+  situationBeginner?: string;
+  /** 학습자(나) 쪽 정보 (선택). 상대가 외부 사람이라 학습자의 소속을 모델이 지어내면 상대 회사와 섞이는 장면에 둠 */
+  learner?: string;
+}
+
+/** 난이도에 맞는 상황 문구 */
+export function sceneSituation(scene: ServerScene, level: string): string {
+  return level === '초급' && scene.situationBeginner ? scene.situationBeginner : scene.situation;
 }
 
 export const SERVER_SCENES: Record<string, ServerScene> = {
@@ -15,6 +27,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     title: '일정 지연 보고',
     counterpart: '김 팀장(직속 상사)',
     situation: '금요일까지 내기로 한 시장 조사 보고서가 자료 수집 지연으로 다음 주 화요일로 늦어질 것 같음',
+    situationBeginner: '보고서가 늦어짐. 자료가 늦게 와서 다음 주 화요일에 낼 수 있음',
     goal: '결론(지연) → 원인 → 대책·새 일정 순서로 보고하기',
     firstMessage: '지금 잠깐 괜찮아요? 지난주에 맡긴 시장 조사 보고서는 어떻게 되고 있어요?',
     openingLineBeginner: '보고서는 어떻게 돼요?',
@@ -51,6 +64,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     title: '거래처 미팅 연기 요청(전화)',
     counterpart: '최 부장(거래처 한빛상사)',
     situation: '내일 오전 미팅을 내부 사정으로 다음 주로 미뤄야 함',
+    learner: '미래전자 영업팀 직원 (한빛상사의 거래처 담당자)',
     goal: '사과 → 간단한 사유 → 대안 일정 제안 → 양해 구하기',
     firstMessage: '네, 한빛상사 최민수입니다.',
     openingLineBeginner: '네, 한빛상사 최민수입니다.',
@@ -60,6 +74,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     title: '다른 부서에 자료 협조 요청',
     counterpart: '정 대리(재무팀)',
     situation: '분기 예산 자료가 필요하지만 상대도 바쁜 시기임',
+    situationBeginner: '재무팀에서 자료를 받아야 함. 상대도 지금 바쁨',
     goal: '쿠션어 + 구체적 요청(무엇을, 언제까지)',
     firstMessage: '네, 재무팀 정하나입니다. 무슨 일이세요?',
     openingLineBeginner: '네, 재무팀 정하나입니다. 무슨 일이세요?',

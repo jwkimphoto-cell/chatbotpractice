@@ -113,12 +113,9 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
     setErrorMessage(null);
     setSaveSuccessMessage(null);
 
-    // 첫 사용자 발화인 경우 "[난이도: ...]" 접두사 포함
+    // 난이도는 요청 본문의 level로 보냄 (대화 기록에 "[난이도: …]"를 붙이지 않음)
     const userMessageCount = messages.filter((m) => m.role === 'user').length;
-    let finalContent = textToSend;
-    if (userMessageCount === 0 && !textToSend.startsWith('[난이도:')) {
-      finalContent = `[난이도: ${difficulty}] ${textToSend}`;
-    }
+    const finalContent = textToSend;
 
     // 도움 사용 기록: [입력창에 넣기]로 시작한 발화인지, 보내기 전에 고쳤는지
     if (!isFeedback && pendingInsertRef.current) {
@@ -168,7 +165,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       const reply = await streamChatMessage(
         apiPayload,
         (chunk) => appendDelta(assistantId, chunk),
-        { mode: 'roleplay', sceneId: selectedScene.id },
+        { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty },
       );
 
       // 피드백 요청 메시지였거나 응답에 NOTES가 포함된 경우 노트 추출
