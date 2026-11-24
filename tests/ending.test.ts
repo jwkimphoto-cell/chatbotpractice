@@ -82,3 +82,19 @@ describe('종료 상태에서는 도움 요청이 나가지 않음', () => {
     assert.equal(closed.showWaiting, false);
   });
 });
+
+describe('롤플레이 입력창 안내 문구', async () => {
+  const { roleplayInputPlaceholder } = await import('../src/utils/chatState.ts');
+  const counterpart = '최 부장(거래처 한빛상사)';
+  test('대화 중에는 상대역에게 할 말을 입력하라는 안내', () => {
+    assert.match(roleplayInputPlaceholder({ ended: false, feedbackRequested: false, counterpart }), /^최 부장\(거래처 한빛상사\)에게 할 말을 입력하세요/);
+  });
+  test('종료 카드가 보이는 동안은 [대화 이어 가기] 안내', () => {
+    assert.equal(roleplayInputPlaceholder({ ended: true, feedbackRequested: false, counterpart }), '대화가 끝났어요. 이어 가려면 [대화 이어 가기]를 누르세요.');
+  });
+  test('피드백을 받아 종료 카드가 사라진 뒤에는 [장면 변경] 안내 (없는 버튼을 안내하지 않음)', () => {
+    const text = roleplayInputPlaceholder({ ended: true, feedbackRequested: true, counterpart });
+    assert.equal(text, '피드백을 받았어요. 다시 하려면 [장면 변경]을 누르세요.');
+    assert.doesNotMatch(text, /대화 이어 가기/);
+  });
+});

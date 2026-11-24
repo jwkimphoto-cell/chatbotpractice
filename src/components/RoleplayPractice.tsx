@@ -8,7 +8,7 @@ import { NotesSaveBox } from './NotesSaveBox';
 import { RoleplaySupportPanel, type InsertSource, type StepType } from './RoleplaySupportPanel';
 import type { SupportVerdict } from '../utils/meta';
 import { buildUsageBlock, emptyUsage, type SupportUsage } from '../utils/supportUsage';
-import { buildRoleplayPayload, pickBeginnerReply, supportPanelState } from '../utils/chatState';
+import { buildRoleplayPayload, pickBeginnerReply, roleplayInputPlaceholder, supportPanelState } from '../utils/chatState';
 import { decideEnding } from '../utils/ending';
 
 interface DisplayMessage extends ChatMessage {
@@ -606,7 +606,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
                 value={input}
                 onChange={handleTextareaInput}
                 onKeyDown={handleKeyDown}
-                placeholder={ended ? '대화가 끝났어요. 이어 가려면 [대화 이어 가기]를 누르세요.' : `${selectedScene.counterpart}에게 할 말을 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)`}
+                placeholder={roleplayInputPlaceholder({ ended, feedbackRequested, counterpart: selectedScene.counterpart })}
                 disabled={isLoading || ended}
               />
               <button

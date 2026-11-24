@@ -107,3 +107,14 @@ export function expressionLevel(list: { role: string; content: string }[]): '초
   }
   return '중급';
 }
+
+/**
+ * 롤플레이 입력창 안내 문구.
+ * - 종료 상태: 종료 카드가 보이는 동안은 [대화 이어 가기]를, 피드백을 받아 카드가 사라진 뒤에는 화면에 남은 [장면 변경]을 안내
+ * - 그 밖에는 상대역에게 할 말을 입력하라는 기본 안내
+ */
+export function roleplayInputPlaceholder(s: { ended: boolean; feedbackRequested: boolean; counterpart: string }): string {
+  if (s.ended && s.feedbackRequested) return '피드백을 받았어요. 다시 하려면 [장면 변경]을 누르세요.';
+  if (s.ended) return '대화가 끝났어요. 이어 가려면 [대화 이어 가기]를 누르세요.';
+  return `${s.counterpart}에게 할 말을 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)`;
+}
