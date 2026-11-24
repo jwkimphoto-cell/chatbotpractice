@@ -80,3 +80,69 @@ if (mode === 'repro') {
   } catch (e) { console.warn('중단:', e.message); }
   console.log(`이 작업 API 누적: ${calls}`);
 }
+
+// ---------------- run: 대화를 끝까지 진행하며 종료 처리 확인 ----------------
+if (mode === 'run') {
+  const { decideEnding, isClosingUtterance, nearlySame } = await import('../src/utils/ending.ts');
+  const SCENARIOS = [
+    {
+      id: 'client-postpone-초급', sceneId: 'client-postpone', level: '초급',
+      learner: ['안녕하세요. 저는 미래전자 직원이에요.', '죄송해요. 내일 미팅을 다음 주로 미루고 싶어요.', '회사에 일이 생겼어요.', '다음 주 목요일 오전 10시 괜찮으세요?', '감사합니다. 목요일에 뵙겠습니다.', '네, 감사합니다. 목요일에 뵙겠습니다.'],
+      resume: '그런데 하나 더 여쭤봐도 돼요?',
+    },
+    {
+      id: 'report-progress-중급', sceneId: 'report-progress', level: '중급',
+      learner: ['네, 행사 준비는 70% 정도 됐어요.', '그런데 장소 계약에 문제가 하나 있어요. 날짜가 겹쳤어요.', '다른 장소를 알아보고 있어요. 금요일까지 정할게요.', '네, 감사합니다. 금요일에 다시 말씀드릴게요.', '네, 감사합니다.'],
+    },
+  ];
+  const only = args.only ? String(args.only).split(',') : null;
+  const results = [];
+  try {
+    for (const sc of SCENARIOS) {
+      if (only && !only.includes(sc.id)) continue;
+      const scene = SERVER_SCENES[sc.sceneId];
+      const msgs = [{ role: 'assistant', content: sc.level === '초급' ? scene.openingLineBeginner : scene.firstMessage }];
+      const log = [];
+      let ended = null;
+      for (const text of sc.learner) {
+        msgs.push({ role: 'user', content: text });
+        const r = await api({ mode: 'roleplay', sceneId: sc.sceneId, level: sc.level, messages: msgs.map((m) => ({ role: m.role, content: meta.stripMetaForHistory(m.content) })) });
+        msgs.push({ role: 'assistant', content: r.text });
+        const assistantTurns = msgs.filter((m) => m.role === 'assistant');
+        const repeatedPrev = assistantTurns.length >= 2 && nearlySame(assistantTurns.at(-1).content, assistantTurns.at(-2).content);
+        ended = decideEnding(msgs, [r.text]);
+        log.push({ learner: text, reply: r.text, END: meta.hasEndMarker(r.text), closing: isClosingUtterance(r.text), repeatsPrevReply: repeatedPrev, decision: ended });
+        if (ended) break;
+      }
+      let resume = null;
+      if (sc.resume && ended) {
+        const from = msgs.length;
+        msgs.push({ role: 'user', content: sc.resume });
+        const r = await api({ mode: 'roleplay', sceneId: sc.sceneId, level: sc.level, resume: true, messages: msgs.map((m) => ({ role: m.role, content: meta.stripMetaForHistory(m.content) })) });
+        msgs.push({ role: 'assistant', content: r.text });
+        resume = { learner: sc.resume, reply: r.text, END: meta.hasEndMarker(r.text), repeatsClosing: isClosingUtterance(r.text), decisionAfterResume: decideEnding(msgs, [r.text], from) };
+      }
+      writeFileSync(path.join(OUT, `END-run-${sc.id}.json`), JSON.stringify({ log, resume }, null, 2));
+      results.push({ id: sc.id, turns: log.length, endedBy: ended, log, resume });
+    }
+  } catch (e) { console.warn('중단:', e.message); }
+  console.log(JSON.stringify(results, null, 1));
+  console.log(`이 작업 API 누적: ${calls}`);
+}
+
+// ---------------- resume2: 저장된 대화(종료까지)에 학습자의 중립적인 말로 이어 가기 ----------------
+if (mode === 'resume2') {
+  const { decideEnding, isClosingUtterance } = await import('../src/utils/ending.ts');
+  try {
+    const saved = JSON.parse(readFileSync(path.join(OUT, 'END-run-client-postpone-초급.json'), 'utf8'));
+    const msgs = [{ role: 'assistant', content: SERVER_SCENES['client-postpone'].openingLineBeginner }];
+    for (const t of saved.log) msgs.push({ role: 'user', content: t.learner }, { role: 'assistant', content: t.reply });
+    const from = msgs.length;
+    const learner = String(args.text ?? '네, 알겠습니다.');
+    msgs.push({ role: 'user', content: learner });
+    const r = await api({ mode: 'roleplay', sceneId: 'client-postpone', level: '초급', resume: true, messages: msgs.map((m) => ({ role: m.role, content: meta.stripMetaForHistory(m.content) })) });
+    writeFileSync(path.join(OUT, 'END-resume2.txt'), r.text);
+    console.log(JSON.stringify({ learner, reply: r.text, END: meta.hasEndMarker(r.text), repeatsClosing: isClosingUtterance(r.text), decisionAfterResume: decideEnding([...msgs, { role: 'assistant', content: r.text }], [r.text], from), beginnerIssues: meta.beginnerReplyIssues(r.text, [], SERVER_SCENES['client-postpone'].coreVocab) }, null, 1));
+  } catch (e) { console.warn('중단:', e.message); }
+  console.log(`이 작업 API 누적: ${calls}`);
+}
