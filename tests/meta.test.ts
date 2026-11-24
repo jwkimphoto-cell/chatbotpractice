@@ -258,10 +258,16 @@ describe('초급 상대역 발화 점검', async () => {
     assert.deepEqual(beginnerReplyIssues('네, 한빛상사 최민수입니다.'), []);
     assert.deepEqual(beginnerReplyIssues('시간이 없으니까 빨리 해요.'), []);
   });
-  test('실제 검증에서 나온 문제 발화는 걸림', () => {
+  test('실제 검증에서 나온 문제 발화는 걸림 (\'방법\'은 초급 어휘라 걸리지 않음)', () => {
     const issues = beginnerReplyIssues('네, 비용이 걱정되시는군요. 다른 방법도 있을까요?');
     assert.ok(issues.some((i) => i.includes('-군요')));
-    assert.ok(issues.some((i) => i.includes("'방법'")));
+    assert.ok(!issues.some((i) => i.includes("'방법'")));
+  });
+  test("'방법'·'의견'·'생각'은 초급 어휘", () => {
+    assert.deepEqual(beginnerReplyIssues('네, 말씀 잘 들었어요. 어떤 방법이 좋을까요?'), []);
+    assert.deepEqual(beginnerReplyIssues('다른 의견 있어요?'), []);
+    assert.deepEqual(beginnerReplyIssues('좋은 생각이에요.'), []);
+    assert.ok(beginnerReplyIssues('다른 계획 있어요?').length > 0);
   });
   test('문형: -(으)ㄹ게요, -겠-, -고 있다, 것 같다, 거예요, 때문에', () => {
     for (const s of ['제가 확인할게요.', '내일 보내겠습니다.', '지금 보고서를 쓰고 있어요.', '늦을 것 같아요.', '내일 끝날 거예요.', '비 때문에 늦어요.']) {
@@ -277,4 +283,15 @@ describe('초급 상대역 발화 점검', async () => {
     assert.ok(beginnerReplyIssues('출장은 언제 가요?').length > 0);
     assert.deepEqual(beginnerReplyIssues('출장은 언제 가요?', ['목요일에 출장이 있어요.']), []);
   });
+});
+
+test('고친 표현이 원래 표현과 같은 NOTES 항목은 버림', () => {
+  const same = { scene: 's', counterpart: 'c', original: '좋은 방법인 것 같아요.', corrected: '좋은 방법인 것 같아요', category: '완곡 표현', reason: '적절해요' };
+  assert.deepEqual(extractNotes(`[[NOTES]]${JSON.stringify([same])}[[/NOTES]]`), []);
+});
+
+test('초급 도움 문장의 위 단계 명사는 범위 점검에서 걸림 (방법은 초급)', () => {
+  const model = (text: string) => ({ type: 'model' as const, replyTo: 'x', intent: '', intent_en: '', text, text_en: '', tip: 't', tip_en: '' });
+  assert.match(beginnerSupportIssue(model('장소에 예약 문제가 있어요.')) ?? '', /어휘 '예약'/);
+  assert.equal(beginnerSupportIssue(model('다른 방법이 있어요.')), null);
 });

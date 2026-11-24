@@ -2,7 +2,7 @@
 // 실행: node --import ./scripts/ts-register.mjs scripts/eval.mjs [--groups=A,B,C,D,E] [--ids=부분일치,…] [--dry]
 // - /api/chat 핸들러(api/chat.ts)를 그대로 불러 실제 응답을 만들고, 원문을 eval-out/에 저장합니다.
 // - 키는 기존과 같이 .env.local의 OPENAI_API_KEY를 씁니다(키 처리 방식은 바꾸지 않음).
-// - 호출 사이 3초 간격, 전체 80회 한도(eval-out/_calls.json에 누적), 429는 60초 뒤 1회만 재시도.
+// - 호출 사이 3초 간격, 전체 140회 한도(처음 80회 + 사용자 승인 60회, eval-out/_calls.json에 누적), 429는 60초 뒤 1회만 재시도.
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
@@ -21,10 +21,10 @@ const OUT = 'eval-out';
 mkdirSync(OUT, { recursive: true });
 const CALLS_FILE = path.join(OUT, '_calls.json');
 const RESULTS_FILE = path.join(OUT, 'results.json');
-const LIMIT = 80;
+const LIMIT = 140;
 
 const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, v] = a.replace(/^--/, '').split('='); return [k, v ?? true]; }));
-const groups = String(args.groups ?? 'A,B,C,D,E').split(',');
+const groups = String(args.groups ?? 'A,B,C,D,E,F').split(',');
 const idFilter = args.ids ? String(args.ids).split(',') : null;
 const DRY = !!args.dry;
 
@@ -62,7 +62,7 @@ async function invoke(body) {
 
 async function api(body) {
   if (stopped) throw new BudgetError('중단됨');
-  if (calls >= LIMIT) { stopped = true; throw new BudgetError('API 호출 한도 80회 도달'); }
+  if (calls >= LIMIT) { stopped = true; throw new BudgetError(`API 호출 한도 ${LIMIT}회 도달`); }
   if (DRY) return `[dry] ${body.mode}`;
   await sleep(3000);
   calls++;
@@ -71,7 +71,7 @@ async function api(body) {
   if (r.status === 429) {
     console.warn('429 → 60초 대기 후 1회 재시도');
     await sleep(60000);
-    if (calls >= LIMIT) { stopped = true; throw new BudgetError('API 호출 한도 80회 도달'); }
+    if (calls >= LIMIT) { stopped = true; throw new BudgetError(`API 호출 한도 ${LIMIT}회 도달`); }
     calls++;
     writeFileSync(CALLS_FILE, JSON.stringify({ count: calls }));
     r = await invoke(body);
@@ -297,8 +297,9 @@ const LEARNER = {
 };
 const TURN_SENTENCES = { 초급: 2, 중급: 2, 고급: 3 };
 
-function checkReply(display, level) {
+function checkReply(display, level, learnerSaid = []) {
   const issues = [];
+  if (level === '초급') issues.push(...meta.beginnerReplyIssues(display, learnerSaid).map((i) => `초급 상대역: ${i}`));
   const body = display.replace(/\([^)]*\)/g, '').trim();
   const sentences = meta.splitSentences(body);
   if (sentences.length > TURN_SENTENCES[level]) issues.push(`상대역 ${sentences.length}문장(최대 ${TURN_SENTENCES[level]})`);
@@ -375,9 +376,21 @@ async function groupD() {
     const say = async (text, turn) => {
       msgs.push({ role: 'user', content: text });
       const id = `${base}-r${turn}`;
-      const raw = fresh(id) ? await api({ mode: 'roleplay', sceneId, level, messages: msgs }) : saved(id);
+      const learnerSaid = msgs.filter((m) => m.role === 'user').map((m) => m.content);
+      let raw = fresh(id) ? await api({ mode: 'roleplay', sceneId, level, messages: msgs }) : saved(id);
+      let extra = { learner: text };
+      // 화면과 같은 동작: 초급 상대역 말이 초급 기준을 넘으면 simplify로 1회 다시 받고 나은 쪽을 씀
+      if (fresh(id) && level === '초급') {
+        const firstIssues = meta.beginnerReplyIssues(raw, learnerSaid);
+        if (firstIssues.length) {
+          const retry = await api({ mode: 'roleplay', sceneId, level, simplify: true, messages: msgs });
+          const retryIssues = meta.beginnerReplyIssues(retry, learnerSaid);
+          extra = { ...extra, firstReply: raw, firstIssues, retried: true };
+          if (retryIssues.length <= firstIssues.length) raw = retry;
+        }
+      }
       const display = meta.cleanDisplayContent(raw);
-      if (fresh(id)) record(id, 'D', raw, checkReply(display, level), { learner: text });
+      if (fresh(id)) record(id, 'D', raw, checkReply(display, level, learnerSaid), extra);
       msgs.push({ role: 'assistant', content: meta.stripMetaForHistory(raw) });
     };
     if (level === '초급') await support('starter', 1);
@@ -416,7 +429,18 @@ async function groupE() {
   }
 }
 
-const runners = { A: groupA, B: groupB, C: groupC, D: groupD, E: groupE };
+// ---------------- F. 초급 다시 말하기 안내 비교 ----------------
+// 이전(금지 명사 목록 안내) 결과: "네, 말씀 잘 들었어요. 어떤 방법이 좋을까요?" — 같은 차례를 지금 안내로 다시 받음
+async function groupF() {
+  const id = 'F-simplify-meeting-disagree-초급-r1';
+  if (!want(id)) return;
+  const learner = '좋은 생각이에요. 하지만 돈이 많이 들어요.';
+  const msgs = [{ role: 'assistant', content: SERVER_SCENES['meeting-disagree'].openingLineBeginner }, { role: 'user', content: learner }];
+  const raw = await api({ mode: 'roleplay', sceneId: 'meeting-disagree', level: '초급', simplify: true, messages: msgs });
+  record(id, 'F', raw, checkReply(meta.cleanDisplayContent(raw), '초급', [learner]), { previous: '네, 말씀 잘 들었어요. 어떤 방법이 좋을까요?' });
+}
+
+const runners = { A: groupA, B: groupB, C: groupC, D: groupD, E: groupE, F: groupF };
 try {
   for (const g of groups) {
     if (stopped) break;

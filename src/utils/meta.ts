@@ -163,7 +163,9 @@ export function extractNotes(text: string): ParsedNoteItem[] {
         typeof item.original === 'string' &&
         typeof item.corrected === 'string' &&
         typeof item.reason === 'string' &&
-        ALLOWED_CATEGORIES.includes(item.category)
+        ALLOWED_CATEGORIES.includes(item.category) &&
+        // 고친 표현이 원래 표현과 같으면(문장부호·공백만 다름) 저장할 의미가 없어 버림
+        normalizeUtterance(item.original) !== normalizeUtterance(item.corrected)
       ) {
         validated.push({
           scene: item.scene.trim(),
@@ -396,6 +398,11 @@ export function beginnerSupportIssue(data: SupportData): string | null {
   else if (data.type === 'model') sentences.push(data.text);
   const bad = sentences.find((t) => BEGINNER_REASON_FORM.test(t));
   if (bad) return `초급 범위 밖 이유 문형: "${bad}"`;
+  // 위 단계 명사 (예: "예약 문제" — 실제 응답 검증에서 반복됨). 어절 첫머리에서만 찾음
+  for (const t of sentences) {
+    const w = BEGINNER_BANNED_NOUNS.find((n) => new RegExp(`(?:^|\\s)${n}`).test(t));
+    if (w) return `초급 범위 밖 어휘 '${w}': "${t}"`;
+  }
   const options = data.type === 'starter' ? data.choices.options : data.type === 'choices' ? data.options : [];
   const blamed = options.find(
     (o) => o.verdict !== 'appropriate' && /니다(?=[\s.,!?]|$)/.test(o.text) && (BLAME_FORMAL.test(o.reason) || BLAME_FORMAL.test(o.reason_en)),
@@ -763,7 +770,7 @@ export function repeatsLearner(data: SupportData, learnerSaid: string[]): string
  * 초급에서 쓰지 않는 위 단계 명사 (api/_lib/level-rules.ts VOCAB의 중급·고급 명사와 같아야 함 — tests/meta.test.ts가 확인).
  * src와 api는 서로 import하지 않으므로 목록을 옮겨 둠. 동사(늦다 등)는 초급 장면 문구에도 쓰여 검사하지 않음.
  */
-export const BEGINNER_BANNED_NOUNS = ['일정', '출장', '손님', '고객', '거래처', '발표', '계획', '방법', '의견', '결과', '제품', '주문', '예약', '회신', '첨부 파일', '담당자'];
+export const BEGINNER_BANNED_NOUNS = ['일정', '출장', '손님', '고객', '거래처', '발표', '계획', '결과', '제품', '주문', '예약', '회신', '첨부 파일', '담당자'];
 
 /** 받침이 ㄹ인 글자인지 (예: '할'·'볼' → '-(으)ㄹ게요' 판별용) */
 function endsWithRieul(ch: string): boolean {
