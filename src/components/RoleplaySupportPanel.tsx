@@ -63,6 +63,8 @@ interface Props {
   onUse: (type: StepType) => void;
   /** 이 턴에서 처음 고른 보기의 판정 */
   onFirstChoice: (verdict: SupportVerdict) => void;
+  /** 초급 [🔄 다른 도움 받기]를 쓴 순간 (턴당 1회) */
+  onRefresh?: () => void;
 }
 
 interface Results {
@@ -100,6 +102,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   onInsert,
   onUse,
   onFirstChoice,
+  onRefresh,
 }) => {
   const isBeginner = level === '초급';
   const autoStarter = isBeginner && !disabled;
@@ -120,6 +123,8 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   const [intent, setIntent] = useState<{ ko: string; en: string } | null>(null);
 
   const usedRef = useRef<Set<StepType>>(new Set());
+  // 초급 [🔄 다른 도움 받기]: 턴당 1회 (패널은 턴마다 새로 마운트되므로 상태로 충분)
+  const [refreshed, setRefreshed] = useState(false);
   const inFlightRef = useRef(false);
   const rateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -165,7 +170,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
    * 한 번 요청하고 검증까지. 429는 그대로 던짐(바깥에서 "잠시 후" 안내).
    * 요청 직전에 getHistory()로 최신 기록을 읽고, 마지막 상대역 발화가 이 패널의 대상과 다르면 보내지 않음(skip)
    */
-  const fetchOnce = async (type: SupportType, frameTemplate?: string): Promise<FetchResult> => {
+  const fetchOnce = async (type: SupportType, frameTemplate?: string, variant = false): Promise<FetchResult> => {
     const history = getHistory();
     const last = history[history.length - 1];
     if (!last || last.role !== 'assistant' || !last.content.trim() || normalizeUtterance(last.content) !== normalizeUtterance(targetText)) {
@@ -176,7 +181,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     console.info(`[RoleplaySupport] API 요청: ${type}`);
     let reply = '';
     try {
-      reply = await streamChatMessage(history, () => {}, { mode: 'roleplay_support', sceneId, level, supportType: type, frameTemplate });
+      reply = await streamChatMessage(history, () => {}, { mode: 'roleplay_support', sceneId, level, supportType: type, frameTemplate, variant: variant && type === 'starter' });
     } catch (e) {
       if (e instanceof ChatApiError && e.status === 429) throw e;
       logFail('http', type, last.content, '', e instanceof ChatApiError ? `status ${e.status}` : String(e));
@@ -217,7 +222,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   };
 
   /** 도움 요청 (한 번에 하나만). 캐시가 있으면 API를 부르지 않음. [다시 시도]도 이 함수로 최신 기록을 다시 읽어 보냄 */
-  const request = async (type: SupportType, alreadyLoading = false) => {
+  const request = async (type: SupportType, alreadyLoading = false, variant = false) => {
     const cacheKey = `${turnKey}:${type}`;
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -232,7 +237,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
     if (!alreadyLoading) setLoading(type);
     setError(null);
     try {
-      let r = await fetchOnce(type);
+      let r = await fetchOnce(type, undefined, variant);
       // starter의 문장 틀 빈칸 개수 오류·빈칸이 문장 끝인 오류는 같은 요청을 다시 보내도 반복되는 경우가 많아 재요청 없이 바로 대체 경로로 감
       const skipRetry =
         type === 'starter' && !r.ok && r.kind === 'schema' && 'error' in r && /빈칸 개수|빈칸이 문장 끝/.test(r.error ?? '');
@@ -241,7 +246,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
       if (retryable && !skipRetry) {
         console.info(`[RoleplaySupport] ${type} 실패(${r.ok ? '' : r.kind}) → 한 번 다시 요청`);
         const first = r;
-        r = await fetchOnce(type);
+        r = await fetchOnce(type, undefined, variant);
         // 두 번 모두 길이만 넘었으면 버리지 않고 마지막 결과를 보여 줌
         if (!r.ok && r.kind === 'length' && 'soft' in r && r.soft) r = { ok: true, data: r.soft };
         else if (!r.ok && r.kind !== 'skip' && !first.ok && first.kind === 'length' && 'soft' in first && first.soft && r.kind !== 'replyTo') r = { ok: true, data: first.soft };
@@ -322,6 +327,21 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   };
 
   const nextStep = STEP_ORDER.find((t) => !opened.includes(t));
+
+  /** 초급: 문장 틀·보기를 캐시를 무시하고 새로 받음 (턴당 1회, 입력·선택 상태도 비움) */
+  const refreshStarter = () => {
+    if (busy || refreshed) return;
+    setRefreshed(true);
+    onRefresh?.();
+    cache.delete(`${turnKey}:starter`);
+    setResults((r) => ({ ...r, frame: undefined, choices: undefined }));
+    setChoiceOrder([]);
+    setPicked([]);
+    setBlankValues({});
+    setIntent(null);
+    void request('starter', false, true);
+  };
+  const canRefresh = isBeginner && !refreshed && (!!results.frame || !!results.choices || error?.type === 'starter');
 
   // ---------- 렌더링 도우미 ----------
   const en = (text: string) => (isBeginner && text ? <span className="support-en">{text}</span> : null);
@@ -512,6 +532,17 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
       ))}
 
       <div className="support-actions">
+        {canRefresh && (
+          <button
+            type="button"
+            className="quick-chip"
+            aria-label="다른 도움 받기 (이번 차례에 한 번)"
+            disabled={busy}
+            onClick={refreshStarter}
+          >
+            🔄 다른 도움 받기 <span className="support-en-inline">Get different help</span>
+          </button>
+        )}
         {isBeginner ? (
           (['hint', 'model'] as StepType[])
             .filter((t) => !opened.includes(t))

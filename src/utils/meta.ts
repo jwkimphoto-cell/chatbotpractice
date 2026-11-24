@@ -131,6 +131,17 @@ export function stripMetaForHistory(text: string): string {
     .trim();
 }
 
+/** corrected가 original과 같거나 original의 어절 일부를 순서대로 빼기만 한 것인지 */
+export function isWordDeletionOnly(original: string, corrected: string): boolean {
+  const words = (t: string) => t.replace(/[\p{P}\p{S}]/gu, ' ').split(/\s+/).filter(Boolean);
+  const o = words(original);
+  const c = words(corrected);
+  if (c.length > o.length) return false;
+  let i = 0;
+  for (const w of o) if (i < c.length && w === c[i]) i++;
+  return i === c.length;
+}
+
 /** 메타 블록 안의 코드 펜스(```json … ```) 제거 */
 function stripCodeFence(text: string): string {
   return text.replace(/```(?:json)?/gi, '').trim();
@@ -164,8 +175,9 @@ export function extractNotes(text: string): ParsedNoteItem[] {
         typeof item.corrected === 'string' &&
         typeof item.reason === 'string' &&
         ALLOWED_CATEGORIES.includes(item.category) &&
-        // 고친 표현이 원래 표현과 같으면(문장부호·공백만 다름) 저장할 의미가 없어 버림
-        normalizeUtterance(item.original) !== normalizeUtterance(item.corrected)
+        // 고친 표현이 원래 표현과 같거나(문장부호·공백만 다름) 원래 표현에서 낱말을 빼기만 했으면 버림
+        // (예: "우리 손님은 나이가 많아요" → "손님은 나이가 많아요" — 고칠 문제가 없는 문장을 지적한 경우)
+        !isWordDeletionOnly(item.original, item.corrected)
       ) {
         validated.push({
           scene: item.scene.trim(),
@@ -366,10 +378,13 @@ export function countEojeol(sentence: string): number {
   return s ? s.split(/\s+/).length : 0;
 }
 
-/** 문장 나누기 (. ? ! 뒤에서 끊음, 빈 문장 제외) */
+/**
+ * 문장 나누기 (. ? ! 뒤에서 끊음, 빈 문장 제외). 문장 길이는 이렇게 나눈 문장마다 셈(두 문장을 합쳐 세지 않음).
+ * 문장부호 뒤에 띄어쓰기가 없어도 한글·따옴표가 이어지면 끊음 ("괜찮아요?내일 봐요." → 2문장)
+ */
 export function splitSentences(text: string): string[] {
   return text
-    .split(/(?<=[.?!。？！])\s+/)
+    .split(/(?<=[.?!。？！])(?:\s+|(?=[가-힣"“]))/)
     .map((x) => x.trim())
     .filter((x) => x.length > 0);
 }

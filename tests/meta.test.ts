@@ -295,3 +295,30 @@ test('초급 도움 문장의 위 단계 명사는 범위 점검에서 걸림 (�
   assert.match(beginnerSupportIssue(model('장소에 예약 문제가 있어요.')) ?? '', /어휘 '예약'/);
   assert.equal(beginnerSupportIssue(model('다른 방법이 있어요.')), null);
 });
+
+describe('문장 길이는 문장마다 적용', async () => {
+  const { splitSentences: split, supportLengthIssue: lenIssue, beginnerReplyIssues: replyIssues } = await import('../src/utils/meta.ts');
+  const model = (text: string) => ({ type: 'model' as const, replyTo: 'x', intent: '', intent_en: '', text, text_en: '', tip: 't', tip_en: '' });
+  test('두 문장을 합쳐 세지 않음 (초급 5+5, 중급 7+7)', () => {
+    assert.equal(beginnerSupportIssue(model('오늘 오후에 회의실에서 만나요. 자료도 꼭 같이 가져와요.')), null);
+    assert.equal(lenIssue(model('네, 주 고객은 SNS를 잘 안 봐요. 다른 광고도 함께 하면 좋겠어요.'), '중급'), null);
+    assert.deepEqual(replyIssues('좋아요. 그럼 내일 오후에 다시 이야기해요.'), []);
+  });
+  test('한 문장이 최대 어절을 넘으면 걸림', () => {
+    assert.match(lenIssue(model('네, 주 고객층이 SNS를 자주 이용하지 않을 것 같아요.'), '중급') ?? '', /9어절/);
+  });
+  test('문장부호 뒤 띄어쓰기가 없어도 문장을 나눔', () => {
+    assert.deepEqual(split('괜찮아요?내일 봐요.'), ['괜찮아요?', '내일 봐요.']);
+    assert.deepEqual(split('3.5% 늘었어요.'), ['3.5% 늘었어요.']);
+  });
+});
+
+test('낱말을 빼기만 한 "고침"은 NOTES에서 버림, 실제로 고친 것은 남김', async () => {
+  const { isWordDeletionOnly } = await import('../src/utils/meta.ts');
+  assert.equal(isWordDeletionOnly('우리 손님은 나이가 많아요.', '손님은 나이가 많아요.'), true);
+  assert.equal(isWordDeletionOnly('좋은 방법인 것 같아요.', '좋은 방법인 것 같아요'), true);
+  assert.equal(isWordDeletionOnly('내일까지 보내 주세요', '바쁘시겠지만 내일까지 보내 주세요'), false);
+  assert.equal(isWordDeletionOnly('말하겠습니다', '말씀드리겠습니다'), false);
+  const item = { scene: 's', counterpart: 'c', original: '우리 손님은 나이가 많아요.', corrected: '손님은 나이가 많아요.', category: '어휘·문법', reason: 'r' };
+  assert.deepEqual(extractNotes(`[[NOTES]]${JSON.stringify([item])}[[/NOTES]]`), []);
+});

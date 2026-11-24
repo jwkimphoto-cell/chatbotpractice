@@ -96,3 +96,12 @@ export function choiceState(options: ChoiceOptionLike[], picked: string[]): Choi
 export function pickBeginnerReply(first: string, firstIssues: string[], retry: string, retryIssues: string[]): { text: string; issues: string[] } {
   return retryIssues.length <= firstIssues.length ? { text: retry, issues: retryIssues } : { text: first, issues: firstIssues };
 }
+
+/** 표현 연습 대화의 난이도: 가장 최근의 "난이도: …" 시작 메시지(버튼·직접 입력)에서 읽음. 없으면 중급 */
+export function expressionLevel(list: { role: string; content: string }[]): '초급' | '중급' | '고급' {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i].role === 'user' ? list[i].content.match(/난이도\s*[:：]\s*(초급|중급|고급)/) : null;
+    if (m) return m[1] as '초급' | '중급' | '고급';
+  }
+  return '중급';
+}

@@ -9,6 +9,8 @@ export type UsageVerdict = 'appropriate' | 'partial' | 'inappropriate';
 
 export interface SupportUsage {
   counts: Record<UsageStep, number>;
+  /** 초급 [🔄 다른 도움 받기] 사용 횟수 (턴당 최대 1회) */
+  refresh: number;
   firstChoices: UsageVerdict[];
   /** [입력창에 넣기]로 시작한 발화: 몇 번째 발화인지, 출처, 보내기 전에 고쳤는지 */
   helped: { index: number; source: UsageSource; modified: boolean }[];
@@ -16,6 +18,7 @@ export interface SupportUsage {
 
 export const emptyUsage = (): SupportUsage => ({
   counts: { hint: 0, frame: 0, choices: 0, model: 0 },
+  refresh: 0,
   firstChoices: [],
   helped: [],
 });
@@ -28,11 +31,11 @@ const SOURCE_NAME: Record<UsageSource, string> = { frame: '문장 틀', choices:
  * @returns 사용 기록이 없으면 빈 문자열
  */
 export function buildUsageBlock(u: SupportUsage, userTurns: number): string {
-  const total = u.counts.hint + u.counts.frame + u.counts.choices + u.counts.model + u.helped.length;
+  const total = u.counts.hint + u.counts.frame + u.counts.choices + u.counts.model + u.refresh + u.helped.length;
   if (total === 0) return '';
   const first = u.firstChoices.length ? `(처음 선택: ${u.firstChoices.join(', ')})` : '';
   const lines = [
-    `방향 힌트 ${u.counts.hint}회, 문장 틀 ${u.counts.frame}회, 보기 선택 ${u.counts.choices}회${first}, 모범 답 ${u.counts.model}회`,
+    `방향 힌트 ${u.counts.hint}회, 문장 틀 ${u.counts.frame}회, 보기 선택 ${u.counts.choices}회${first}, 모범 답 ${u.counts.model}회${u.refresh ? `, 다른 도움 받기 ${u.refresh}회` : ''}`,
     u.helped.length
       ? `도움으로 시작한 발화: ${u.helped.map((h) => `${h.index}번째(${SOURCE_NAME[h.source]}, ${h.modified ? '수정함' : '그대로'})`).join(', ')}`
       : '도움으로 시작한 발화: 없음',

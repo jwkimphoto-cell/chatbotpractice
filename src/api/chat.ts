@@ -23,6 +23,8 @@ export interface StreamChatOptions {
   frameTemplate?: string;
   /** roleplay 초급 전용: 상대역 말이 초급 기준을 넘어 다시 받을 때 true */
   simplify?: boolean;
+  /** roleplay_support 초급 starter 전용: [🔄 다른 도움 받기]로 새로 받을 때 true */
+  variant?: boolean;
 }
 
 /** 서버 오류 응답. status로 429(한도 초과) 등을 구분할 수 있음 */
@@ -70,6 +72,7 @@ export async function streamChatMessage(
     supportType?: SupportType;
     frameTemplate?: string;
     simplify?: boolean;
+    variant?: boolean;
   } = {
     messages,
     ...(options?.mode ? { mode: options.mode } : {}),
@@ -78,6 +81,7 @@ export async function streamChatMessage(
     ...(options?.supportType ? { supportType: options.supportType } : {}),
     ...(options?.frameTemplate ? { frameTemplate: options.frameTemplate } : {}),
     ...(options?.simplify ? { simplify: true } : {}),
+    ...(options?.variant ? { variant: true } : {}),
   };
 
   const response = await fetch('/api/chat', {

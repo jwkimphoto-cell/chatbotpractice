@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage } from '../api/chat';
 import { FormattedMessage } from './FormattedMessage';
+import { NotesSaveBox } from './NotesSaveBox';
 import {
   cleanDisplayContent,
   collapseRepeatedReply,
@@ -10,7 +11,7 @@ import {
   type ParsedNoteItem,
 } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
-import { buildExpressionPayload } from '../utils/chatState';
+import { buildExpressionPayload, expressionLevel } from '../utils/chatState';
 import {
   EMPTY_HISTORY,
   buildHistoryBlock,
@@ -202,7 +203,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
       const extracted = extractNotes(reply);
       if (extracted.length > 0) {
         setFeedbackNotes(extracted);
-        setSelectedNoteIndices(new Set(extracted.map((_, i) => i)));
+        setSelectedNoteIndices(new Set()); // 처음에는 모두 비워 둠 (학습자가 고르거나 [전체 선택])
       }
     } catch (error: unknown) {
       console.error('Chat error:', error);
@@ -275,6 +276,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({
       .filter((_, idx) => selectedNoteIndices.has(idx))
       .map((item) => ({
         source: 'expression' as const,
+        level: expressionLevel(messages),
         scene: item.scene || '표현 연습',
         counterpart: item.counterpart || '상대',
         original: item.original,
@@ -436,45 +438,15 @@ export const Chatbot: React.FC<ChatbotProps> = ({
       </div>
 
       {/* 표현 노트 저장 UI (🟡 부분 정답·❌ 오답 채점 후) */}
-      {feedbackNotes.length > 0 && (
-        <div className="notes-save-box">
-          <div className="notes-save-header">
-            <strong>📝 복습 노트로 저장할 표현을 선택하세요</strong>
-            <span className="notes-save-sub">선택한 표현은 '나의 표현 노트' 탭에서 복습할 수 있습니다.</span>
-          </div>
-          <div className="notes-checkbox-list">
-            {feedbackNotes.map((item, idx) => (
-              <label key={idx} className="note-checkbox-item">
-                <input
-                  type="checkbox"
-                  checked={selectedNoteIndices.has(idx)}
-                  onChange={() => handleToggleNote(idx)}
-                />
-                <div className="note-item-text">
-                  <span className="note-category-tag">{item.category}</span>
-                  <span className="note-orig">"{item.original}"</span>
-                  <span className="note-arrow">→</span>
-                  <span className="note-corr">"{item.corrected}"</span>
-                  <div className="note-reason">{item.reason}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-          <div className="notes-save-actions">
-            <button
-              type="button"
-              className="save-notes-btn"
-              onClick={handleSaveSelectedNotes}
-              disabled={selectedNoteIndices.size === 0 || isLoading}
-            >
-              선택한 표현 노트에 저장 ({selectedNoteIndices.size}개)
-            </button>
-            {saveSuccessMessage && (
-              <span className="save-success-msg">✓ {saveSuccessMessage}</span>
-            )}
-          </div>
-        </div>
-      )}
+      <NotesSaveBox
+        notes={feedbackNotes}
+        selected={selectedNoteIndices}
+        onToggle={handleToggleNote}
+        onSelectAll={(all) => setSelectedNoteIndices(all ? new Set(feedbackNotes.map((_, i) => i)) : new Set())}
+        onSave={handleSaveSelectedNotes}
+        disabled={isLoading}
+        message={saveSuccessMessage}
+      />
 
       {/* 빠른 응답 버튼: 첫 표현 소개 후 표시, 스트리밍 중 비활성화, 초기화 시 숨김 */}
       {hasIntroduced && (

@@ -58,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate, simplify } = (req.body || {}) as {
+    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate, simplify, variant } = (req.body || {}) as {
       mode?: string;
       sceneId?: string;
       messages?: IncomingMessage[];
@@ -66,6 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       supportType?: string;
       frameTemplate?: unknown;
       simplify?: unknown;
+      variant?: unknown;
     };
 
     // 1. 모드 검사 (기본값: 'expression')
@@ -159,10 +160,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ error: 'frameTemplate은 choices 요청에서만, {{n}} 빈칸이 있는 300자 이하 문장으로 보낼 수 있습니다.' });
         }
       }
+      // 초급 [🔄 다른 도움 받기]: starter에서만 true (고정 안내 문구를 붙임)
+      if (variant !== undefined && (variant !== true || supportType !== 'starter')) {
+        return res.status(400).json({ error: 'variant는 초급 starter 도움에서 true로만 보낼 수 있습니다.' });
+      }
       instructions = buildRoleplaySupportInstructions(
         SERVER_SCENES[sceneId],
         level as RoleplayLevel,
         supportType as SupportType,
+        variant === true,
       );
     } else if (mode === 'email') {
       instructions = EMAIL_COACH_PROMPT;

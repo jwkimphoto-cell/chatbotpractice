@@ -54,3 +54,15 @@ test('직접 쓴 발화가 있으면 수를 적음 (도움으로 시작한 발�
   assert.match(block, /직접 쓴 발화: 2개/);
   assert.doesNotMatch(block, /직접 쓴 발화: 없음/);
 });
+
+test('다른 도움 받기 횟수가 도움 사용 기록에 들어감', () => {
+  const u = emptyUsage();
+  u.refresh = 1;
+  assert.match(buildUsageBlock(u, 1), /다른 도움 받기 1회/);
+  assert.doesNotMatch(buildUsageBlock({ ...emptyUsage(), counts: { hint: 1, frame: 0, choices: 0, model: 0 } }, 1), /다른 도움 받기/);
+});
+test('표현 연습 대화의 난이도 읽기 (없으면 중급)', async () => {
+  const { expressionLevel } = await import('../src/utils/chatState.ts');
+  assert.equal(expressionLevel([{ role: 'user', content: '주제: 보고\n난이도: 초급\n시작' }, { role: 'assistant', content: '난이도: 고급' }]), '초급');
+  assert.equal(expressionLevel([{ role: 'user', content: '안녕하세요' }]), '중급');
+});

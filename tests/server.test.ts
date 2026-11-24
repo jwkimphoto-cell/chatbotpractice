@@ -44,6 +44,8 @@ describe('서버 입력 검증 (400)', () => {
     ['롤플레이 잘못된 level', { mode: 'roleplay', sceneId: 'report-delay', level: '최상급', messages: [ai('a'), user('b')] }],
     ['simplify를 중급 롤플레이에', { mode: 'roleplay', sceneId: 'report-delay', level: '중급', simplify: true, messages: [ai('a'), user('b')] }],
     ['simplify가 true가 아님', { mode: 'roleplay', sceneId: 'report-delay', level: '초급', simplify: '쉽게', messages: [ai('a'), user('b')] }],
+    ['variant를 starter 밖에서', { mode: 'roleplay_support', sceneId: 'report-delay', level: '중급', supportType: 'hint', variant: true, messages: [ai('a')] }],
+    ['variant가 true가 아님', { mode: 'roleplay_support', sceneId: 'report-delay', level: '초급', supportType: 'starter', variant: 'again', messages: [ai('a')] }],
     ['도움: 잘못된 level', { mode: 'roleplay_support', sceneId: 'report-delay', level: 'beginner', supportType: 'hint', messages: [ai('a')] }],
     ['도움: 잘못된 supportType', { mode: 'roleplay_support', sceneId: 'report-delay', level: '중급', supportType: 'answer', messages: [ai('a')] }],
     ['도움: 중급 + starter', { mode: 'roleplay_support', sceneId: 'report-delay', level: '중급', supportType: 'starter', messages: [ai('a')] }],
@@ -127,4 +129,21 @@ test('초급 다시 말하기 안내는 simplify일 때만, 고정 문구로 붙
   for (const w of ['방법', '의견', '일정', '고객']) assert.ok(!note.includes(w), `안내에 "${w}"`);
   assert.match(note, /쉬운 질문 꼴: "뭐가 좋아요\?"/);
   assert.doesNotMatch(prompts.buildRoleplayPrompt(scene, '중급', true), /\[다시 말하기/);
+});
+
+test('다른 도움 받기 안내는 variant일 때만 붙음', () => {
+  const scene = SERVER_SCENES['report-progress'];
+  assert.doesNotMatch(prompts.buildRoleplaySupportInstructions(scene, '초급', 'starter'), /다른 도움 요청/);
+  assert.match(prompts.buildRoleplaySupportInstructions(scene, '초급', 'starter', true), /다른 도움 요청/);
+});
+test('복습 채점은 요청의 난이도로 해설하고, 롤플레이 피드백은 맞는 문장을 잘한 점으로 다룸', () => {
+  assert.match(prompts.REVIEW_GRADER_PROMPT, /요청의 "난이도" 값에 맞춰/);
+  assert.doesNotMatch(prompts.REVIEW_GRADER_PROMPT, /난이도 정보가 없으므로/);
+  const rp = prompts.buildRoleplayPrompt(SERVER_SCENES['meeting-disagree'], '초급');
+  assert.match(rp, /이미 상대·장면에 맞으면 "다시 생각해 볼 표현"에 넣지 않고, "잘한 점"에서/);
+  assert.match(rp, /한국어 해설 줄\(잘한 점, 이유, 도움 사용, 말하기 순서 점검\)도 초급 어휘/);
+});
+test('난이도 기준에 "문장마다" 적용이 명시됨', async () => {
+  const { LEVEL_RULES } = await import('../api/_lib/level-rules.ts');
+  assert.match(LEVEL_RULES, /문장마다 따로 적용/);
 });

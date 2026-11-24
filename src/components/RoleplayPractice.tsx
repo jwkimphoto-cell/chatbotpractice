@@ -4,6 +4,7 @@ import { SCENES, type SceneCardData } from '../data/scenes';
 import { beginnerReplyIssues, cleanDisplayContent, extractNotes, shortHash, type ParsedNoteItem, type SupportData } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
+import { NotesSaveBox } from './NotesSaveBox';
 import { RoleplaySupportPanel, type InsertSource, type StepType } from './RoleplaySupportPanel';
 import type { SupportVerdict } from '../utils/meta';
 import { buildUsageBlock, emptyUsage, type SupportUsage } from '../utils/supportUsage';
@@ -199,7 +200,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       if (extracted.length > 0) {
         setFeedbackNotes(extracted);
         // 기본 전체 선택
-        setSelectedNoteIndices(new Set(extracted.map((_, i) => i)));
+        setSelectedNoteIndices(new Set()); // 처음에는 모두 비워 둠 (학습자가 고르거나 [전체 선택])
       }
     } catch (error: unknown) {
       console.error('Roleplay chat error:', error);
@@ -264,6 +265,9 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   const handleSupportUse = (type: StepType) => {
     usageRef.current.counts[type] += 1;
   };
+  const handleRefresh = () => {
+    usageRef.current.refresh += 1;
+  };
   const handleFirstChoice = (verdict: SupportVerdict) => {
     usageRef.current.firstChoices.push(verdict);
   };
@@ -289,6 +293,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       .filter((_, idx) => selectedNoteIndices.has(idx))
       .map((item) => ({
         source: 'roleplay' as const,
+        level: difficulty,
         scene: item.scene || selectedScene?.title || '상황 롤플레이',
         counterpart: item.counterpart || selectedScene?.counterpart || '상대역',
         original: item.original,
@@ -488,45 +493,15 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
           </div>
 
           {/* 피드백에서 추출된 표현 노트 저장 체크박스 UI */}
-          {feedbackNotes.length > 0 && (
-            <div className="notes-save-box">
-              <div className="notes-save-header">
-                <strong>📝 복습 노트로 저장할 표현을 선택하세요</strong>
-                <span className="notes-save-sub">선택한 표현은 '나의 표현 노트' 탭에서 복습할 수 있습니다.</span>
-              </div>
-              <div className="notes-checkbox-list">
-                {feedbackNotes.map((item, idx) => (
-                  <label key={idx} className="note-checkbox-item">
-                    <input
-                      type="checkbox"
-                      checked={selectedNoteIndices.has(idx)}
-                      onChange={() => handleToggleNote(idx)}
-                    />
-                    <div className="note-item-text">
-                      <span className="note-category-tag">{item.category}</span>
-                      <span className="note-orig">"{item.original}"</span>
-                      <span className="note-arrow">→</span>
-                      <span className="note-corr">"{item.corrected}"</span>
-                      <div className="note-reason">{item.reason}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="notes-save-actions">
-                <button
-                  type="button"
-                  className="save-notes-btn"
-                  onClick={handleSaveSelectedNotes}
-                  disabled={selectedNoteIndices.size === 0}
-                >
-                  선택한 표현 노트에 저장 ({selectedNoteIndices.size}개)
-                </button>
-                {saveSuccessMessage && (
-                  <span className="save-success-msg">✓ {saveSuccessMessage}</span>
-                )}
-              </div>
-            </div>
-          )}
+          <NotesSaveBox
+            notes={feedbackNotes}
+            selected={selectedNoteIndices}
+            onToggle={handleToggleNote}
+            onSelectAll={(all) => setSelectedNoteIndices(all ? new Set(feedbackNotes.map((_, i) => i)) : new Set())}
+            onSave={handleSaveSelectedNotes}
+            disabled={false}
+            message={saveSuccessMessage}
+          />
 
           {/* 도움 사다리 패널 (입력창 바로 위). 상대역 발화마다 key가 바뀌어 새로 마운트됨 */}
           {showSupportWaiting && (
@@ -550,6 +525,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
               onInsert={handleSupportInsert}
               onUse={handleSupportUse}
               onFirstChoice={handleFirstChoice}
+              onRefresh={handleRefresh}
             />
           )}
 

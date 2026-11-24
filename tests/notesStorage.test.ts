@@ -13,7 +13,7 @@ const g = globalThis as Record<string, unknown>;
 g.localStorage = new MemoryStorage();
 g.window = globalThis;
 
-const { addNotes, loadNotes, recordReviewResult, getDueCards } = await import('../src/utils/notesStorage.ts');
+const { addNotes, loadNotes, recordReviewResult, getDueCards, cardLevel } = await import('../src/utils/notesStorage.ts');
 
 const KEY = 'officeKoreanCoach.notes.v1';
 const DAY = 24 * 60 * 60 * 1000;
@@ -82,4 +82,12 @@ describe('표현 노트 저장소', () => {
     storage.setItem(KEY, JSON.stringify([{ id: 't', createdAt: '', source: 'expression', scene: '', counterpart: '', original: 'a', corrected: 'b', category: '높임법', reason: '', box: 0, nextReviewAt: tonight.toISOString(), reviewCount: 0 }]));
     assert.equal(getDueCards().length, 1);
   });
+});
+
+test('카드 난이도: 저장한 값을 쓰고, 없는 기존 카드는 중급', () => {
+  storage.clear();
+  addNotes([{ ...base, original: 'x', corrected: 'y', level: '초급' }]);
+  assert.equal(cardLevel(loadNotes()[0]), '초급');
+  assert.equal(cardLevel({}), '중급');
+  assert.equal(cardLevel({ level: '최상급' as never }), '중급');
 });

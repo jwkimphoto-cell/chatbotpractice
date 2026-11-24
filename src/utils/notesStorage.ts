@@ -1,5 +1,8 @@
 import { isPassingVerdict, type NoteCategory, type ReviewVerdict } from './meta';
 
+export type NoteLevel = '초급' | '중급' | '고급';
+const NOTE_LEVELS: NoteLevel[] = ['초급', '중급', '고급'];
+
 export interface NoteCard {
   id: string;
   createdAt: string; // ISO 날짜
@@ -15,6 +18,13 @@ export interface NoteCard {
   reviewCount: number;
   /** 'partial'은 4단계 채점 도입 후 추가. 기존 카드의 'correct'·'incorrect'도 그대로 읽힘 */
   lastResult?: 'correct' | 'partial' | 'incorrect';
+  /** 카드를 만든 학습의 난이도. 이 필드가 생기기 전 카드에는 없으며 중급으로 간주함(cardLevel) */
+  level?: NoteLevel;
+}
+
+/** 카드 난이도 (없거나 잘못된 값이면 중급) — 복습 채점 해설 수준에 씀 */
+export function cardLevel(card: Pick<NoteCard, 'level'>): NoteLevel {
+  return card.level && NOTE_LEVELS.includes(card.level) ? card.level : '중급';
 }
 
 const STORAGE_KEY = 'officeKoreanCoach.notes.v1';

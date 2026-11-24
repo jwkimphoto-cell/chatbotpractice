@@ -3,6 +3,7 @@ import { streamChatMessage, type ChatMessage } from '../api/chat';
 import { cleanDisplayContent, extractNotes, stripMetaForHistory, type ParsedNoteItem } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
+import { NotesSaveBox } from './NotesSaveBox';
 
 interface DisplayMessage extends ChatMessage {
   id: string;
@@ -151,7 +152,7 @@ ${trimmedBody}`;
       const notes = extractNotes(reply);
       if (notes.length > 0) {
         setFeedbackNotes(notes);
-        setSelectedNoteIndices(new Set(notes.map((_, i) => i)));
+        setSelectedNoteIndices(new Set()); // 처음에는 모두 비워 둠 (학습자가 고르거나 [전체 선택])
       }
     } catch (error: unknown) {
       console.error('Email coach error:', error);
@@ -219,14 +220,8 @@ ${trimmedBody}`;
 
       const notes = extractNotes(reply);
       if (notes.length > 0) {
-        // 새 노트의 체크박스 번호는 기존 노트 개수 뒤에서 시작 (선택 개수 기준이 아님)
-        const baseIndex = feedbackNotes.length;
+        // 추가 질문에서 나온 노트도 처음에는 선택하지 않음 (기존 선택은 그대로)
         setFeedbackNotes((prev) => [...prev, ...notes]);
-        setSelectedNoteIndices((prev) => {
-          const next = new Set(prev);
-          notes.forEach((_, idx) => next.add(baseIndex + idx));
-          return next;
-        });
       }
     } catch (error: unknown) {
       console.error('Follow-up error:', error);
@@ -267,6 +262,8 @@ ${trimmedBody}`;
       .filter((_, idx) => selectedNoteIndices.has(idx))
       .map((item) => ({
         source: 'email' as const,
+        // 이메일 첨삭은 난이도 선택이 없고 고친 표현에 고급 기준을 쓰므로 고급으로 저장
+        level: '고급' as const,
         scene: '이메일 첨삭',
         counterpart: item.counterpart || recipient,
         original: item.original,
@@ -448,45 +445,15 @@ ${trimmedBody}`;
           </div>
 
           {/* 노트 저장 UI */}
-          {feedbackNotes.length > 0 && (
-            <div className="notes-save-box">
-              <div className="notes-save-header">
-                <strong>📝 복습 노트로 저장할 첨삭 표현</strong>
-                <span className="notes-save-sub">나의 표현 노트에 저장하고 주기적으로 복습할 수 있습니다.</span>
-              </div>
-              <div className="notes-checkbox-list">
-                {feedbackNotes.map((item, idx) => (
-                  <label key={idx} className="note-checkbox-item">
-                    <input
-                      type="checkbox"
-                      checked={selectedNoteIndices.has(idx)}
-                      onChange={() => handleToggleNote(idx)}
-                    />
-                    <div className="note-item-text">
-                      <span className="note-category-tag">{item.category}</span>
-                      <span className="note-orig">"{item.original}"</span>
-                      <span className="note-arrow">→</span>
-                      <span className="note-corr">"{item.corrected}"</span>
-                      <div className="note-reason">{item.reason}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="notes-save-actions">
-                <button
-                  type="button"
-                  className="save-notes-btn"
-                  onClick={handleSaveSelectedNotes}
-                  disabled={selectedNoteIndices.size === 0}
-                >
-                  선택한 표현 노트에 저장 ({selectedNoteIndices.size}개)
-                </button>
-                {saveSuccessMessage && (
-                  <span className="save-success-msg">✓ {saveSuccessMessage}</span>
-                )}
-              </div>
-            </div>
-          )}
+          <NotesSaveBox
+            notes={feedbackNotes}
+            selected={selectedNoteIndices}
+            onToggle={handleToggleNote}
+            onSelectAll={(all) => setSelectedNoteIndices(all ? new Set(feedbackNotes.map((_, i) => i)) : new Set())}
+            onSave={handleSaveSelectedNotes}
+            disabled={isLoading}
+            message={saveSuccessMessage}
+          />
 
           {/* 추가 질문 입력창 */}
           <div className="input-form-container">

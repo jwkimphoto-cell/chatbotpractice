@@ -29,6 +29,8 @@ const idFilter = args.ids ? String(args.ids).split(',') : null;
 const DRY = !!args.dry;
 
 let calls = existsSync(CALLS_FILE) ? JSON.parse(readFileSync(CALLS_FILE, 'utf8')).count : 0;
+// --max=N: 이번 실행에서 쓸 수 있는 최대 호출 수 (전체 한도와 둘 중 작은 쪽)
+const CAP = args.max ? Math.min(LIMIT, calls + Number(args.max)) : LIMIT;
 const results = existsSync(RESULTS_FILE) ? JSON.parse(readFileSync(RESULTS_FILE, 'utf8')) : {};
 let stopped = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -62,7 +64,7 @@ async function invoke(body) {
 
 async function api(body) {
   if (stopped) throw new BudgetError('중단됨');
-  if (calls >= LIMIT) { stopped = true; throw new BudgetError(`API 호출 한도 ${LIMIT}회 도달`); }
+  if (calls >= CAP) { stopped = true; throw new BudgetError(`API 호출 한도 ${CAP}회 도달`); }
   if (DRY) return `[dry] ${body.mode}`;
   await sleep(3000);
   calls++;
@@ -71,7 +73,7 @@ async function api(body) {
   if (r.status === 429) {
     console.warn('429 → 60초 대기 후 1회 재시도');
     await sleep(60000);
-    if (calls >= LIMIT) { stopped = true; throw new BudgetError(`API 호출 한도 ${LIMIT}회 도달`); }
+    if (calls >= CAP) { stopped = true; throw new BudgetError(`API 호출 한도 ${CAP}회 도달`); }
     calls++;
     writeFileSync(CALLS_FILE, JSON.stringify({ count: calls }));
     r = await invoke(body);
@@ -346,7 +348,8 @@ function checkFeedback(raw, level, withUsage, usageBlock = '') {
   else if (!/\[\[NOTES\]\]\s*(?:```(?:json)?)?\s*\[\s*\]/.test(raw) && meta.extractNotes(raw).length === 0) issues.push('NOTES 파싱 실패');
   if (level === '초급') {
     const next = display.split('### 다음에 써 볼 한 문장')[1]?.split('\n').map((l) => l.replace(/^[-*\s]+/, '').trim()).find((l) => /[가-힣]/.test(l)) ?? '';
-    if (next && meta.countEojeol(next.replace(/["“”]/g, '')) > 5) issues.push(`초급 "다음에 써 볼 한 문장" 5어절 초과: ${next}`);
+    // 문장마다 셈 (두 문장이면 합쳐 세지 않음)
+    for (const part of meta.splitSentences(next.replace(/["“”]/g, ''))) if (meta.countEojeol(part) > 5) issues.push(`초급 "다음에 써 볼 한 문장" 5어절 초과: ${part}`);
     if (!/[A-Za-z]{3,} [A-Za-z]{2,}/.test(display.split('### 잘한 점')[1] ?? '')) issues.push('초급 영어 병기 없음');
   }
   issues.push(...commonIssues(display, { level }));
@@ -440,7 +443,41 @@ async function groupF() {
   record(id, 'F', raw, checkReply(meta.cleanDisplayContent(raw), '초급', [learner]), { previous: '네, 말씀 잘 들었어요. 어떤 방법이 좋을까요?' });
 }
 
-const runners = { A: groupA, B: groupB, C: groupC, D: groupD, E: groupE, F: groupF };
+// ---------------- G. 결정 반영 확인 (다른 도움 받기, 카드 난이도별 복습 채점) ----------------
+async function groupG() {
+  // G1: 초급 starter를 처음 받은 뒤 [🔄 다른 도움 받기](variant)로 한 번 더 받음 — 저장된 대화 기록으로 재현
+  for (const sceneId of ['report-progress', 'meeting-disagree']) {
+    const base = `G-refresh-${sceneId}-초급-t2`;
+    if (!want(base)) continue;
+    const scene = SERVER_SCENES[sceneId];
+    const r1 = saved(`D-${sceneId}-초급-r1`);
+    const msgs = [{ role: 'assistant', content: scene.openingLineBeginner }, { role: 'user', content: LEARNER[sceneId]['초급'][0] }, { role: 'assistant', content: meta.stripMetaForHistory(r1) }];
+    const target = msgs[2].content;
+    const learnerSaid = [LEARNER[sceneId]['초급'][0]];
+    for (const [suffix, variant] of [['first', false], ['refresh', true]]) {
+      const raw = await api({ mode: 'roleplay_support', sceneId, level: '초급', supportType: 'starter', ...(variant ? { variant: true } : {}), messages: msgs });
+      const c = checkSupport(raw, 'starter', '초급', target, learnerSaid);
+      record(`${base}-${suffix}`, 'G', raw, c.issues, { target });
+    }
+  }
+  // G2: 같은 복습 답을 카드 난이도 초급·고급으로 채점 (판정은 같고 해설 수준만 달라야 함)
+  for (const level of ['초급', '고급']) {
+    const id = `G-review-${level}`;
+    if (!want(id)) continue;
+    const content = `[복습 채점 요청]\n장면: 이메일 첨삭 / 상대: 거래처 담당자 / 난이도: ${level} / 원래 표현: 내일까지 보내 주세요 / 모범 표현: 번거로우시겠지만 내일까지 보내 주시면 감사하겠습니다 / 범주: 완곡 표현 / 학습자 답: 바쁘시겠지만 내일까지 보내 주실 수 있을까요?`;
+    const raw = await api({ mode: 'review', messages: [{ role: 'user', content }] });
+    const issues = [];
+    const r = meta.extractResult(raw);
+    if (!r || r.verdict !== 'alternative') issues.push(`판정 ${r?.verdict} (기대: alternative)`);
+    const display = meta.cleanDisplayContent(raw);
+    if (level === '초급' && !/[A-Za-z]{3,} [A-Za-z]{2,}/.test(display.split('판단 근거')[1] ?? '')) issues.push('초급 영어 병기 없음');
+    if (level === '고급' && /[A-Za-z]{4,} [A-Za-z]{3,} [A-Za-z]{3,}/.test(display.replace(/\[\[RESULT\]\][\s\S]*$/, ''))) issues.push('고급인데 영어 문장');
+    issues.push(...commonIssues(display, { level }));
+    record(id, 'G', raw, issues, { verdict: r?.verdict });
+  }
+}
+
+const runners = { A: groupA, B: groupB, C: groupC, D: groupD, E: groupE, F: groupF, G: groupG };
 try {
   for (const g of groups) {
     if (stopped) break;

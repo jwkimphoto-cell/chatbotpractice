@@ -13,6 +13,7 @@ import {
   deleteNote,
   recordReviewResult,
   getDueCards,
+  cardLevel,
   type NoteCard,
 } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
@@ -121,7 +122,7 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
     onStreamingChange?.(true);
 
     const reviewPrompt = `[복습 채점 요청]
-장면: ${currentCard.scene} / 상대: ${currentCard.counterpart} / 원래 표현: ${currentCard.original} / 모범 표현: ${currentCard.corrected} / 범주: ${currentCard.category} / 학습자 답: ${userAnswer.trim()}`;
+장면: ${currentCard.scene} / 상대: ${currentCard.counterpart} / 난이도: ${cardLevel(currentCard)} / 원래 표현: ${currentCard.original} / 모범 표현: ${currentCard.corrected} / 범주: ${currentCard.category} / 학습자 답: ${userAnswer.trim()}`;
 
     const apiPayload: ChatMessage[] = [{ role: 'user', content: reviewPrompt }];
 
@@ -235,7 +236,7 @@ export const ExpressionNotes: React.FC<ExpressionNotesProps> = ({
           {!isSessionFinished && currentCard ? (
             <div className="quiz-card-box">
               <div className="quiz-scene-info">
-                <strong>상황:</strong> {currentCard.scene} · <strong>상대:</strong> {currentCard.counterpart}
+                <strong>상황:</strong> {currentCard.scene} · <strong>상대:</strong> {currentCard.counterpart} · <strong>난이도:</strong> {cardLevel(currentCard)}
               </div>
 
               <div className="quiz-question-box">
