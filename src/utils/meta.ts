@@ -131,6 +131,11 @@ export function stripMetaForHistory(text: string): string {
     .trim();
 }
 
+/** 메타 블록 안의 코드 펜스(```json … ```) 제거 */
+function stripCodeFence(text: string): string {
+  return text.replace(/```(?:json)?/gi, '').trim();
+}
+
 /**
  * 응답 텍스트에서 [[NOTES]] ... [[/NOTES]] 블록을 추출하여 유효성 검증된 Note 목록을 반환
  * 파싱 실패 시 조용히 빈 배열 반환
@@ -142,7 +147,8 @@ export function extractNotes(text: string): ParsedNoteItem[] {
   if (!match || !match[1]) return [];
 
   try {
-    const rawJson = match[1].trim();
+    // 금지했지만 코드 펜스(```json)를 붙여 오는 경우가 있어 지우고 읽음
+    const rawJson = stripCodeFence(match[1]);
     if (!rawJson || rawJson === '[]') return [];
 
     const parsed = JSON.parse(rawJson);
@@ -201,7 +207,7 @@ function parseResultBlock(text: string): ParsedResult | null {
   if (!match || !match[1]) return null;
 
   try {
-    const parsed = JSON.parse(match[1].trim());
+    const parsed = JSON.parse(stripCodeFence(match[1]));
     if (!parsed || typeof parsed !== 'object') return null;
 
     // verdict가 있으면 verdict 기준, 없으면 기존 correct 값으로 판단 (하위 호환)
@@ -437,9 +443,10 @@ function supportJsonText(text: string): string | null {
   let body = block ? block[1] : null;
   if (body === null) {
     const a = text.indexOf('{');
+    if (a === -1) return null;
     const b = text.lastIndexOf('}');
-    if (a === -1 || b <= a) return null;
-    body = text.slice(a, b + 1);
+    // 닫는 괄호가 없으면(응답이 중간에 끊김) 끝까지 가져가 파싱 실패 → 괄호 균형으로 truncated 분류
+    body = b > a ? text.slice(a, b + 1) : text.slice(a);
   }
   return body.replace(/```(?:json)?/gi, '').trim();
 }
