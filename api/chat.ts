@@ -10,6 +10,7 @@ import {
   type SupportType,
 } from './_lib/prompts.js';
 import { SERVER_SCENES } from './_lib/scenes.js';
+import { withResumeNote } from './_lib/input.js';
 import {
   buildNextSetInstruction,
   buildStartInstruction,
@@ -58,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate, simplify, variant } = (req.body || {}) as {
+    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate, simplify, variant, resume } = (req.body || {}) as {
       mode?: string;
       sceneId?: string;
       messages?: IncomingMessage[];
@@ -67,6 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       frameTemplate?: unknown;
       simplify?: unknown;
       variant?: unknown;
+      resume?: unknown;
     };
 
     // 1. 모드 검사 (기본값: 'expression')
@@ -92,6 +94,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (msg.content.length > 4000) {
         return res.status(400).json({ error: '메시지 길이는 4,000자를 초과할 수 없습니다.' });
       }
+    }
+
+    if (resume !== undefined && mode !== 'roleplay') {
+      return res.status(400).json({ error: 'resume는 롤플레이에서만 보낼 수 있습니다.' });
     }
 
     // 위 검증을 통과한 메시지 (role·content 타입 확정)
@@ -134,6 +140,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 초급 상대역 다시 말하기: 화면이 상대역 말이 초급 기준을 넘는다고 판단했을 때만 true (고정 안내 문구를 붙임)
       if (simplify !== undefined && (simplify !== true || level !== '초급')) {
         return res.status(400).json({ error: 'simplify는 초급 롤플레이에서 true로만 보낼 수 있습니다.' });
+      }
+      // [대화 이어 가기] 뒤 첫 요청: true만 허용 (input에 서버 안내를 덧붙임)
+      if (resume !== undefined && resume !== true) {
+        return res.status(400).json({ error: 'resume는 롤플레이에서 true로만 보낼 수 있습니다.' });
       }
       instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId], level as RoleplayLevel, simplify === true);
     } else if (mode === 'roleplay_support') {
@@ -189,6 +199,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (inputItems.length === 0) {
       return res.status(400).json({ error: '전송할 유효한 메시지가 없습니다.' });
+    }
+    if (mode === 'roleplay' && resume === true) {
+      inputItems.splice(0, inputItems.length, ...withResumeNote(inputItems));
     }
 
     // 도움 사다리: 대화 기록 뒤에 서버가 만든 요청 메시지 하나를 덧붙임.

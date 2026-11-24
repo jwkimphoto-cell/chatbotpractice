@@ -25,6 +25,8 @@ export interface StreamChatOptions {
   simplify?: boolean;
   /** roleplay_support 초급 starter 전용: [🔄 다른 도움 받기]로 새로 받을 때 true */
   variant?: boolean;
+  /** roleplay 전용: 종료 카드의 [대화 이어 가기] 뒤 첫 요청에 true (서버가 "[계속]" 안내를 input에 덧붙임) */
+  resume?: boolean;
 }
 
 /** 서버 오류 응답. status로 429(한도 초과) 등을 구분할 수 있음 */
@@ -73,6 +75,7 @@ export async function streamChatMessage(
     frameTemplate?: string;
     simplify?: boolean;
     variant?: boolean;
+    resume?: boolean;
   } = {
     messages,
     ...(options?.mode ? { mode: options.mode } : {}),
@@ -82,6 +85,7 @@ export async function streamChatMessage(
     ...(options?.frameTemplate ? { frameTemplate: options.frameTemplate } : {}),
     ...(options?.simplify ? { simplify: true } : {}),
     ...(options?.variant ? { variant: true } : {}),
+    ...(options?.resume ? { resume: true } : {}),
   };
 
   const response = await fetch('/api/chat', {

@@ -88,7 +88,16 @@ export function stripLevelTag(text: string): string {
 const INTERNAL_BLOCK_REGEX = /^[ \t]*\[(?:이미 소개한 문형|이미 쓴 대표 문장|도움 사용 기록|서버 안내|이번 세트 문형[^\]\n]*)\][^\n]*(?:\n(?![ \t]*\n)[^\n]*)*\n?/gm;
 export function stripInternalMarkers(text: string): string {
   if (!text) return '';
-  return stripSourceTags(stripLevelTag(text)).replace(INTERNAL_BLOCK_REGEX, '').replace(/\n{3,}/g, '\n\n');
+  return stripSourceTags(stripLevelTag(text)).replace(END_MARKER_REGEX, '').replace(INTERNAL_BLOCK_REGEX, '').replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * 롤플레이 상대역이 대화가 끝났다고 알리는 표시 [[END]] (응답 끝에 붙음).
+ * 화면에는 보이지 않고(stripInternalMarkers), 다음 요청의 대화 기록에서도 지움(stripMetaForHistory)
+ */
+const END_MARKER_REGEX = /[ \t]*\[\[END\]\][ \t]*/g;
+export function hasEndMarker(text: string): boolean {
+  return /\[\[END\]\]/.test(text || '');
 }
 
 /**
@@ -114,7 +123,7 @@ export function cleanDisplayContent(text: string): string {
 
   // 2. 스트리밍 중 마커의 일부(접두사)가 문자열 끝에 붙어 있는 경우 숨김
   // 가능한 접두사 패턴: [[N, [[NO, [[NOT, [[NOTE, [[NOTES, [[NOTES], [[R, [[RE, [[RES, [[RESU, [[RESUL, [[RESULT, [[RESULT], [[
-  const partialMarkerRegex = /\[(?:\[(?:N(?:O(?:T(?:E(?:S(?:\])?)?)?)?)?|R(?:E(?:S(?:U(?:L(?:T(?:\])?)?)?)?)?)?)?)?$/;
+  const partialMarkerRegex = /\[(?:\[(?:N(?:O(?:T(?:E(?:S(?:\])?)?)?)?)?|R(?:E(?:S(?:U(?:L(?:T(?:\])?)?)?)?)?)?|E(?:N(?:D(?:\])?)?)?)?)?$/;
   return text.replace(partialMarkerRegex, '').trimEnd();
 }
 
@@ -124,6 +133,7 @@ export function cleanDisplayContent(text: string): string {
 export function stripMetaForHistory(text: string): string {
   if (!text) return '';
   return stripLevelTag(text)
+    .replace(END_MARKER_REGEX, '')
     .replace(/\[\[NOTES\]\][\s\S]*?\[\[\/NOTES\]\]/g, '')
     .replace(/\[\[RESULT\]\][\s\S]*?\[\[\/RESULT\]\]/g, '')
     // 닫는 마커 없이 잘린 메타 블록은 시작 마커부터 끝까지 제거

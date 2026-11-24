@@ -41,6 +41,8 @@ export interface SupportPanelInput {
   isLoading: boolean;
   streamingId: string | null;
   messages: StoredMessage[];
+  /** 대화 종료 상태 ([[END]] 또는 반복·끝인사 감지). 종료 상태에서는 패널을 숨기고 도움 요청을 보내지 않음 */
+  ended?: boolean;
 }
 export interface SupportPanelState {
   /** 도움 패널을 마운트할지 (상대역 응답이 다 끝나고 마지막 말이 상대역일 때만) */
@@ -60,7 +62,7 @@ export function supportPanelState(s: SupportPanelInput): SupportPanelState {
   const last = s.messages[s.messages.length - 1];
   const lastIsAssistant = !!last && last.role === 'assistant' && done(last);
   const hasUserTurn = s.messages.some((m) => m.role === 'user');
-  const inChat = s.stage === 'chat' && !s.feedbackRequested;
+  const inChat = s.stage === 'chat' && !s.feedbackRequested && !s.ended;
   const showPanel = inChat && lastIsAssistant && !s.isLoading;
   const showWaiting = inChat && !showPanel && s.isLoading && hasUserTurn;
   return { showPanel, showWaiting, target: lastIsAssistant ? stripMetaForHistory(last.content) : '', turnIndex };

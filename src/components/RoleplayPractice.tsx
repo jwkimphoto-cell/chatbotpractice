@@ -9,6 +9,7 @@ import { RoleplaySupportPanel, type InsertSource, type StepType } from './Rolepl
 import type { SupportVerdict } from '../utils/meta';
 import { buildUsageBlock, emptyUsage, type SupportUsage } from '../utils/supportUsage';
 import { buildRoleplayPayload, pickBeginnerReply, supportPanelState } from '../utils/chatState';
+import { decideEnding } from '../utils/ending';
 
 interface DisplayMessage extends ChatMessage {
   id: string;
@@ -46,6 +47,11 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   // 도움 사다리 상태: 세션(장면 시작)마다 새로, 피드백 이후에는 패널 숨김
   const [sessionId, setSessionId] = useState(0);
   const [feedbackRequested, setFeedbackRequested] = useState(false);
+  // 대화 종료 상태: 상대역이 [[END]]를 붙였거나 화면이 반복·끝인사 교환을 감지함. 종료 카드를 보이고 입력·도움 요청을 멈춤
+  const [ended, setEnded] = useState(false);
+  // [대화 이어 가기] 뒤 첫 요청에 resume을 보냄 / 이어 간 지점부터만 다시 종료를 판단
+  const resumeRef = useRef(false);
+  const resumeFromRef = useRef(0);
   const usageRef = useRef<SupportUsage>(emptyUsage());
   const pendingInsertRef = useRef<{ text: string; source: InsertSource } | null>(null);
   // 도움 캐시 (키: 상대역 발화 순번 + 발화 해시 + 도움 종류). 새 턴이 되면 패널이 이전 턴 항목을 지움
@@ -85,6 +91,9 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
     // 도움 패널·캐시·사용 기록 초기화 (패널 key가 바뀌어 새로 마운트됨)
     setSessionId((n) => n + 1);
     setFeedbackRequested(false);
+    setEnded(false);
+    resumeRef.current = false;
+    resumeFromRef.current = 0;
     usageRef.current = emptyUsage();
     pendingInsertRef.current = null;
     supportCache.clear();
@@ -112,8 +121,11 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   const handleSendMessage = async (customText?: string) => {
     const textToSend = (customText ?? input).trim();
     if (!textToSend || isLoading || sendingRef.current || !selectedScene) return;
-    sendingRef.current = true;
     const isFeedback = textToSend === FEEDBACK_TEXT;
+    // 종료 상태에서는 피드백 요청만 보냄 (이어 가려면 [대화 이어 가기])
+    if (ended && !isFeedback) return;
+    sendingRef.current = true;
+    const resumeNow = !isFeedback && resumeRef.current;
 
     setErrorMessage(null);
     setSaveSuccessMessage(null);
@@ -167,8 +179,9 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       let reply = await streamChatMessage(
         apiPayload,
         (chunk) => appendDelta(assistantId, chunk),
-        { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty },
+        { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty, resume: resumeNow },
       );
+      const replies = [reply];
 
       // 초급 상대역 말 점검: 초급 기준(문장 수·어절·문형·어휘)을 넘으면 같은 기록으로 1회 다시 받음.
       // 다시 받는 동안 isLoading이 유지되어 도움 패널은 열리지 않고, 말풍선은 비워서 입력 중 표시를 보여 줌
@@ -182,8 +195,9 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
             const retry = await streamChatMessage(
               apiPayload,
               (chunk) => appendDelta(assistantId, chunk),
-              { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty, simplify: true },
+              { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty, simplify: true, resume: resumeNow },
             );
+            replies.push(retry);
             const picked = pickBeginnerReply(reply, firstIssues, retry, beginnerReplyIssues(retry, learnerSaid, selectedScene.coreVocab));
             reply = picked.text;
             if (picked.issues.length > 0 && import.meta.env.DEV) console.warn('[Roleplay] 다시 받은 말도 초급 기준을 넘음 (나은 쪽 표시)', picked.issues);
@@ -192,6 +206,17 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
             console.warn('[Roleplay] 초급 상대역 다시 받기 실패, 처음 말을 표시', retryError);
           }
           setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: reply } : m)));
+        }
+      }
+
+      if (resumeNow) resumeRef.current = false;
+
+      // 대화 종료 판단 ([[END]] 또는 반복·끝인사 감지). 종료되면 종료 카드를 보이고 도움 요청을 멈춤
+      if (!isFeedback) {
+        const decision = decideEnding([...newMessages, { role: 'assistant', content: reply }], replies, resumeFromRef.current);
+        if (decision) {
+          if (import.meta.env.DEV) console.info(`[Roleplay] 대화 종료 상태로 전환 (${decision})`);
+          setEnded(true);
         }
       }
 
@@ -241,7 +266,21 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
     showWaiting: showSupportWaiting,
     target: supportTarget,
     turnIndex,
-  } = supportPanelState({ stage, feedbackRequested, isLoading, streamingId, messages });
+  } = supportPanelState({ stage, feedbackRequested, isLoading, streamingId, messages, ended });
+
+  // 종료 카드: [대화 이어 가기] — 종료 상태를 풀고, 다음 요청에 서버가 "[계속]" 안내를 덧붙이게 함
+  const handleContinue = () => {
+    setEnded(false);
+    resumeRef.current = true;
+    resumeFromRef.current = messages.length;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+  // 종료 카드: [같은 장면 다시 하기] — 같은 장면·난이도로 처음부터 (노트·도움 기록 초기화)
+  const handleRestartScene = () => {
+    if (isLoading) return;
+    handleStartRoleplay(difficulty);
+  };
+  const showEndingCard = stage === 'chat' && ended && !feedbackRequested;
   const supportTurnKey = `${sessionId}-${turnIndex}-${shortHash(supportTarget)}`;
 
   // 자식 패널의 useEffect(마운트 시 starter 요청)보다 먼저 실행되도록 layout effect에서 최신 기록을 ref에 넣음
@@ -530,6 +569,27 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
             />
           )}
 
+          {/* 대화 종료 카드 (도움 패널 대신 입력창 위에 표시) */}
+          {showEndingCard && (
+            <div className="ending-card" role="status" aria-live="polite">
+              <p className="ending-card-text">
+                대화가 끝났어요. 피드백을 받아 보세요.
+                {difficulty === '초급' ? <span className="support-en-inline"> (The conversation is over. Get your feedback.)</span> : null}
+              </p>
+              <div className="ending-card-actions">
+                <button type="button" className="save-notes-btn" onClick={handleRequestFeedback} disabled={isLoading || !hasUserTurn}>
+                  피드백 받기
+                </button>
+                <button type="button" className="quick-chip" onClick={handleRestartScene} disabled={isLoading}>
+                  같은 장면 다시 하기
+                </button>
+                <button type="button" className="quick-chip" onClick={handleContinue} disabled={isLoading}>
+                  대화 이어 가기
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 메시지 입력창 */}
           <div className="input-form-container">
             <form
@@ -546,13 +606,13 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
                 value={input}
                 onChange={handleTextareaInput}
                 onKeyDown={handleKeyDown}
-                placeholder={`${selectedScene.counterpart}에게 할 말을 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)`}
-                disabled={isLoading}
+                placeholder={ended ? '대화가 끝났어요. 이어 가려면 [대화 이어 가기]를 누르세요.' : `${selectedScene.counterpart}에게 할 말을 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)`}
+                disabled={isLoading || ended}
               />
               <button
                 type="submit"
                 className="send-button"
-                disabled={isLoading || !input.trim()}
+                disabled={isLoading || ended || !input.trim()}
               >
                 전송
               </button>

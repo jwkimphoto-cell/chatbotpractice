@@ -147,3 +147,32 @@ test('난이도 기준에 "문장마다" 적용이 명시됨', async () => {
   const { LEVEL_RULES } = await import('../api/_lib/level-rules.ts');
   assert.match(LEVEL_RULES, /문장마다 따로 적용/);
 });
+
+describe('대화 종료·이어 가기', async () => {
+  const { withResumeNote, RESUME_NOTE } = await import('../api/_lib/input.ts');
+  test('resume는 롤플레이에서 true로만', async () => {
+    assert.equal((await call({ mode: 'expression', resume: true, messages: [user('a')] })).statusCode, 400);
+    assert.equal((await call({ mode: 'roleplay', sceneId: 'report-delay', level: '중급', resume: 'yes', messages: [ai('a'), user('b')] })).statusCode, 400);
+  });
+  test('[계속] 안내는 마지막 학습자 발화 바로 앞에 input으로 들어감', () => {
+    const items = withResumeNote([
+      { role: 'assistant', content: '네, 들어가세요.' },
+      { role: 'user', content: '그런데 하나 더 있어요.' },
+    ]);
+    assert.deepEqual(items.map((i) => i.content), ['네, 들어가세요.', RESUME_NOTE, '그런데 하나 더 있어요.']);
+    assert.match(RESUME_NOTE, /^\[계속\] 학습자가 대화를 이어 가기로 함\. 새 화제를 자연스럽게 하나 제시$/);
+  });
+  test('롤플레이 프롬프트: [[END]] 종료 규칙, 반복 금지, [계속] 처리, 목표 단계 평가 / 옛 8번 안내 문구 없음', () => {
+    const rp = prompts.buildRoleplayPrompt(SERVER_SCENES['client-postpone'], '초급');
+    assert.match(rp, /응답 맨 끝에 \[\[END\]\]를 붙입니다/);
+    assert.match(rp, /이미 한 마무리 인사.*다시 되풀이하지 않습니다/);
+    assert.match(rp, /"\[계속\]" 안내가 있으면/);
+    assert.match(rp, /목표의 단계가 모두 나왔는지 함께 평가/);
+    assert.doesNotMatch(rp, /대화를 마치려면 '피드백 받기' 버튼을 눌러 주세요/);
+  });
+  test('도움 프롬프트: 끝인사뿐인 차례는 "마무리 인사하기", 인사말을 빈칸으로 두지 않음', () => {
+    const sup = prompts.buildRoleplaySupportInstructions(SERVER_SCENES['client-postpone'], '초급', 'starter');
+    assert.match(sup, /끝인사뿐이면.*intent는 "마무리 인사하기"/);
+    assert.match(sup, /인사말 자체를 빈칸으로 두지 않습니다/);
+  });
+});
