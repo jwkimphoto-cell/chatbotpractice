@@ -1897,6 +1897,13 @@
   display: block;
 }
 
+/* 도움 패널 맨 위: 지금 대답해야 할 것 (intent) */
+.support-intent {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
 .support-hint-list {
   margin: 0;
   padding-left: 20px;

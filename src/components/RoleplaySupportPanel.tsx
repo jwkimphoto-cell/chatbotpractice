@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChatApiError, streamChatMessage, type ChatMessage, type RoleplayLevel, type SupportType } from '../api/chat';
 import {
   extractSupport,
+  normalizeUtterance,
+  replyToMatches,
   type SupportChoiceOption,
   type SupportChoicesBody,
   type SupportData,
@@ -14,7 +16,10 @@ import {
 /**
  * 롤플레이 도움 사다리 패널 (💡 방향 힌트 → ✏️ 문장 틀 → 🔘 보기 선택 → 👀 모범 답)
  * - 부모가 상대역 발화마다 key를 바꿔 새로 마운트함 → 이전 턴의 도움은 자동으로 사라짐
- * - 같은 턴에서 같은 종류를 다시 열면 캐시를 써서 API를 다시 부르지 않음
+ * - 부모는 상대역 응답 스트리밍이 끝나고 내용이 비어 있지 않을 때만 이 패널을 마운트함
+ * - 요청 직전에 getHistory()로 최신 대화 기록을 읽고, 마지막 상대역 발화가 targetText와 같을 때만 보냄
+ * - 응답의 replyTo가 targetText와 다르면 버리고 자동으로 한 번만 다시 요청함 (두 번째도 다르면 [다시 시도])
+ * - 캐시 키는 turnKey(상대역 발화 순번 + 발화 해시) + 도움 종류. 새 턴이 되면 이전 턴 항목은 지움
  * - 도움 요청·응답은 롤플레이 대화 기록에 넣지 않음 (부모의 messages를 읽기만 함)
  */
 
@@ -33,8 +38,14 @@ const VERDICT_ICON: Record<SupportVerdict, string> = { appropriate: '✅', parti
 interface Props {
   sceneId: string;
   level: RoleplayLevel;
-  /** 지금까지의 롤플레이 대화 기록 (마지막이 상대역의 말). 메타 블록 제거된 상태 */
-  history: ChatMessage[];
+  /** 요청 직전에 부르는 최신 대화 기록 읽기 (마지막이 상대역의 말, 메타 블록 제거). 클로저로 잡은 값을 쓰지 않기 위함 */
+  getHistory: () => ChatMessage[];
+  /** 이 패널이 돕는 상대역 발화 (방금 끝난 마지막 상대역 말) */
+  targetText: string;
+  /** 상대역 발화 순번 + 발화 텍스트 해시 (캐시 키 앞부분) */
+  turnKey: string;
+  /** 부모가 가진 도움 캐시 (키: `${turnKey}:${type}`) */
+  cache: Map<string, SupportData>;
   /** 롤플레이 응답 스트리밍 중이면 true */
   disabled: boolean;
   onInsert: (text: string, source: InsertSource) => void;
@@ -62,7 +73,18 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history, disabled, onInsert, onUse, onFirstChoice }) => {
+export const RoleplaySupportPanel: React.FC<Props> = ({
+  sceneId,
+  level,
+  getHistory,
+  targetText,
+  turnKey,
+  cache,
+  disabled,
+  onInsert,
+  onUse,
+  onFirstChoice,
+}) => {
   const isBeginner = level === '초급';
   const autoStarter = isBeginner && !disabled;
 
@@ -78,8 +100,9 @@ export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history,
   const [picked, setPicked] = useState<string[]>([]);
   // ✏️ 문장 틀 입력값
   const [blankValues, setBlankValues] = useState<Record<number, string>>({});
+  // 지금 할 말 (도움 응답의 intent)
+  const [intent, setIntent] = useState<{ ko: string; en: string } | null>(null);
 
-  const cacheRef = useRef<Map<SupportType, SupportData>>(new Map());
   const usedRef = useRef<Set<StepType>>(new Set());
   const inFlightRef = useRef(false);
   const rateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,6 +114,7 @@ export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history,
   };
 
   const applyData = (data: SupportData) => {
+    if (data.intent) setIntent((cur) => cur ?? { ko: data.intent, en: data.intent_en });
     if (data.type === 'starter') {
       setResults((r) => ({ ...r, frame: data.frame, choices: data.choices }));
       setChoiceOrder(shuffle(data.choices.options));
@@ -109,7 +133,8 @@ export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history,
 
   /** 도움 요청 (한 번에 하나만). 캐시가 있으면 API를 부르지 않음 */
   const request = async (type: SupportType, alreadyLoading = false) => {
-    const cached = cacheRef.current.get(type);
+    const cacheKey = `${turnKey}:${type}`;
+    const cached = cache.get(cacheKey);
     if (cached) {
       console.info(`[RoleplaySupport] 캐시 사용: ${type} (API 호출 없음)`);
       applyData(cached);
@@ -119,17 +144,37 @@ export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history,
     inFlightRef.current = true;
     if (!alreadyLoading) setLoading(type);
     setError(null);
-    console.info(`[RoleplaySupport] API 요청: ${type}`);
     try {
-      const reply = await streamChatMessage(history, () => {}, { mode: 'roleplay_support', sceneId, level, supportType: type });
-      const parsed = extractSupport(reply, type);
-      if (!parsed.ok) {
-        console.warn('[RoleplaySupport] 도움 응답 파싱 실패:', parsed.error, reply);
-        setError({ kind: 'parse', type });
+      // replyTo가 다르면 한 번만 자동으로 다시 요청 (무한 재시도 금지)
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        // 요청 직전에 최신 대화 기록을 읽고, 마지막 상대역 발화가 이 패널의 대상과 같은지 다시 확인
+        const history = getHistory();
+        const last = history[history.length - 1];
+        if (!last || last.role !== 'assistant' || !last.content.trim() || normalizeUtterance(last.content) !== normalizeUtterance(targetText)) {
+          console.warn('[RoleplaySupport] 마지막 상대역 발화가 이 도움의 대상과 달라 요청하지 않음');
+          return;
+        }
+        if (import.meta.env.DEV) {
+          console.debug(`[RoleplaySupport] 도움 요청(${type}, ${attempt}번째) — 마지막 상대역 발화:`, last.content);
+        }
+        console.info(`[RoleplaySupport] API 요청: ${type}`);
+        const reply = await streamChatMessage(history, () => {}, { mode: 'roleplay_support', sceneId, level, supportType: type });
+        const parsed = extractSupport(reply, type);
+        if (!parsed.ok) {
+          console.warn('[RoleplaySupport] 도움 응답 파싱 실패:', parsed.error, reply);
+          setError({ kind: 'parse', type });
+          return;
+        }
+        if (!replyToMatches(parsed.data.replyTo, targetText)) {
+          console.warn(`[RoleplaySupport] replyTo 불일치 (${attempt}번째):`, parsed.data.replyTo, '≠', targetText);
+          if (attempt === 1) continue;
+          setError({ kind: 'parse', type });
+          return;
+        }
+        cache.set(cacheKey, parsed.data);
+        applyData(parsed.data);
         return;
       }
-      cacheRef.current.set(type, parsed.data);
-      applyData(parsed.data);
     } catch (e) {
       console.error('[RoleplaySupport] 도움 요청 오류:', e);
       if (e instanceof ChatApiError && e.status === 429) {
@@ -148,6 +193,10 @@ export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history,
 
   // 초급: 상대역 발화가 끝날 때마다(=이 패널이 새로 마운트될 때) starter를 자동으로 1번 요청
   useEffect(() => {
+    // 이전 턴(또는 이전 세션)의 캐시 항목은 지움
+    for (const key of [...cache.keys()]) {
+      if (!key.startsWith(`${turnKey}:`)) cache.delete(key);
+    }
     if (autoStarter) void request('starter', true);
     return () => {
       if (rateTimerRef.current) clearTimeout(rateTimerRef.current);
@@ -320,6 +369,12 @@ export const RoleplaySupportPanel: React.FC<Props> = ({ sceneId, level, history,
 
   return (
     <div className="support-panel" aria-label="도움 사다리">
+      {intent && (
+        <p className="support-intent">
+          지금 할 말: {intent.ko}
+          {isBeginner && intent.en ? <span className="support-en-inline"> (Now: {intent.en})</span> : null}
+        </p>
+      )}
       {error && (
         <div className="error-banner support-error" role="alert">
           <div>

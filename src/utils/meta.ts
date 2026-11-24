@@ -257,17 +257,48 @@ export interface SupportModel {
   tip: string;
   tip_en: string;
 }
-export type SupportData =
-  | SupportHint
-  | ({ type: 'frame' } & SupportFrameBody)
-  | ({ type: 'choices' } & SupportChoicesBody)
-  | SupportModel
-  | { type: 'starter'; frame: SupportFrameBody; choices: SupportChoicesBody };
+/** 모든 도움 응답에 공통으로 붙는 필드: 어느 상대역 발화에 대한 도움인지(replyTo), 그 발화가 요구하는 것(intent) */
+export interface SupportMeta {
+  replyTo: string;
+  intent: string;
+  intent_en: string;
+}
+export type SupportData = SupportMeta &
+  (
+    | SupportHint
+    | ({ type: 'frame' } & SupportFrameBody)
+    | ({ type: 'choices' } & SupportChoicesBody)
+    | SupportModel
+    | { type: 'starter'; frame: SupportFrameBody; choices: SupportChoicesBody }
+  );
 
 export type SupportParseResult = { ok: true; data: SupportData } | { ok: false; error: string };
 
 const isNonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 const asStr = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** 발화 비교용 정규화: 공백·문장부호·기호를 모두 지움 */
+export function normalizeUtterance(text: string): string {
+  return (text || '').replace(/[\s\p{P}\p{S}]/gu, '');
+}
+
+/**
+ * 도움 응답의 replyTo가 실제 마지막 상대역 발화와 같은지.
+ * 공백·문장부호를 지우고 비교하며, 한쪽이 다른 쪽을 포함하면 일치로 봄 (모델이 앞뒤를 줄여 복사하는 경우 허용)
+ */
+export function replyToMatches(replyTo: string, actual: string): boolean {
+  const a = normalizeUtterance(replyTo);
+  const b = normalizeUtterance(actual);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+/** 짧은 문자열 해시 (도움 캐시 키용, djb2) */
+export function shortHash(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
 
 /** 블록 꺼내기: [[SUPPORT]]…[[/SUPPORT]], 없으면 첫 "{"부터 마지막 "}"까지. 코드 펜스는 제거 */
 function supportJsonText(text: string): string | null {
@@ -319,7 +350,8 @@ export function validateFrame(v: unknown): SupportFrameBody | string {
   const uniq = [...new Set(nums)].sort((a, b) => a - b);
   if (uniq.length < 1 || uniq.length > 3) return '빈칸 개수가 1~3개가 아님';
   // 빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 고정돼 있으면, 학습자가 바르게 채워도 틀린 문장이 됨 (예: "{{2}}이 있습니다")
-  if (/\{\{\d+\}\}(?:이|가|을|를|은|는|과|와)(?=[\s.,!?]|$)/.test(f.template)) return '빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 있음';
+  // "{{2}}이/가 있어요"처럼 두 형태를 적어 둔 것도 같은 문제
+  if (/\{\{\d+\}\}\(?(?:이|가|을|를|은|는|과|와)\)?(?=[\s.,!?/)]|$)/.test(f.template)) return '빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 있음';
   // 빈칸이 문장 끝에 있으면 학습자가 서술어·어미까지 직접 만들어야 함 (예: "장소 계약에 {{2}}.")
   if (/\{\{\d+\}\}\s*(?:[.?!。]|$)/.test(f.template.trim())) return '빈칸이 문장 끝에 있음 (빈칸 뒤에 서술어가 없음)';
   if (!Array.isArray(f.blanks)) return 'blanks가 배열이 아님';
@@ -380,6 +412,9 @@ export function extractSupport(text: string, expected: SupportKind): SupportPars
   if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'JSON이 객체가 아님' };
   const p = parsed as Record<string, unknown>;
   if (p.type !== expected) return { ok: false, error: `type이 ${expected}가 아님` };
+  // 어느 상대역 발화에 대한 도움인지 (화면이 실제 마지막 발화와 비교함)
+  if (!isNonEmpty(p.replyTo)) return { ok: false, error: 'replyTo 없음' };
+  const meta: SupportMeta = { replyTo: p.replyTo.trim(), intent: asStr(p.intent).trim(), intent_en: asStr(p.intent_en).trim() };
 
   if (expected === 'hint') {
     if (!Array.isArray(p.steps) || p.steps.length < 2 || p.steps.length > 3 || !p.steps.every(isNonEmpty)) {
@@ -390,21 +425,21 @@ export function extractSupport(text: string, expected: SupportKind): SupportPars
     if (p.steps_en === undefined) stepsEn = steps.map(() => '');
     else if (Array.isArray(p.steps_en) && p.steps_en.length === steps.length) stepsEn = p.steps_en.map((x) => asStr(x).trim());
     else return { ok: false, error: 'steps_en 개수가 steps와 다름' };
-    return { ok: true, data: { type: 'hint', steps, steps_en: stepsEn } };
+    return { ok: true, data: { ...meta, type: 'hint', steps, steps_en: stepsEn } };
   }
   if (expected === 'frame') {
     const f = validateFrame(p);
-    return typeof f === 'string' ? { ok: false, error: f } : { ok: true, data: { type: 'frame', ...f } };
+    return typeof f === 'string' ? { ok: false, error: f } : { ok: true, data: { ...meta, type: 'frame', ...f } };
   }
   if (expected === 'choices') {
     const c = validateChoices(p);
-    return typeof c === 'string' ? { ok: false, error: c } : { ok: true, data: { type: 'choices', ...c } };
+    return typeof c === 'string' ? { ok: false, error: c } : { ok: true, data: { ...meta, type: 'choices', ...c } };
   }
   if (expected === 'model') {
     if (!isNonEmpty(p.text) || !isNonEmpty(p.tip)) return { ok: false, error: 'text 또는 tip 없음' };
     return {
       ok: true,
-      data: { type: 'model', text: p.text.trim(), text_en: asStr(p.text_en).trim(), tip: p.tip.trim(), tip_en: asStr(p.tip_en).trim() },
+      data: { ...meta, type: 'model', text: p.text.trim(), text_en: asStr(p.text_en).trim(), tip: p.tip.trim(), tip_en: asStr(p.tip_en).trim() },
     };
   }
   // starter
@@ -412,5 +447,5 @@ export function extractSupport(text: string, expected: SupportKind): SupportPars
   if (typeof f === 'string') return { ok: false, error: `starter.frame: ${f}` };
   const c = validateChoices(p.choices);
   if (typeof c === 'string') return { ok: false, error: `starter.choices: ${c}` };
-  return { ok: true, data: { type: 'starter', frame: f, choices: c } };
+  return { ok: true, data: { ...meta, type: 'starter', frame: f, choices: c } };
 }

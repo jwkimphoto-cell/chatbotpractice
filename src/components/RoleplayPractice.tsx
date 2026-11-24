@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage, type RoleplayLevel } from '../api/chat';
 import { SCENES, type SceneCardData } from '../data/scenes';
-import { cleanDisplayContent, extractNotes, stripMetaForHistory, type ParsedNoteItem } from '../utils/meta';
+import { cleanDisplayContent, extractNotes, shortHash, stripMetaForHistory, type ParsedNoteItem, type SupportData } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
 import { RoleplaySupportPanel, type InsertSource, type StepType } from './RoleplaySupportPanel';
@@ -46,6 +46,10 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   const [feedbackRequested, setFeedbackRequested] = useState(false);
   const usageRef = useRef<SupportUsage>(emptyUsage());
   const pendingInsertRef = useRef<{ text: string; source: InsertSource } | null>(null);
+  // 도움 캐시 (키: 상대역 발화 순번 + 발화 해시 + 도움 종류). 새 턴이 되면 패널이 이전 턴 항목을 지움
+  const [supportCache] = useState(() => new Map<string, SupportData>());
+  // 도움 요청 직전에 읽을 최신 대화 기록 (클로저로 잡은 이전 값을 쓰지 않도록 ref로 보관)
+  const supportHistoryRef = useRef<ChatMessage[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -79,6 +83,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
     setFeedbackRequested(false);
     usageRef.current = emptyUsage();
     pendingInsertRef.current = null;
+    supportCache.clear();
 
     // AI 첫 대사를 즉시 대화에 추가 (API 호출 없이 바로 표시). 초급은 짧은 첫 대사
     const firstAssistantMsg: DisplayMessage = {
@@ -211,7 +216,18 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   const supportHistory: ChatMessage[] = messages
     .filter((m) => m.id !== streamingId && m.content.trim() !== '')
     .map((m) => ({ role: m.role, content: stripMetaForHistory(m.apiContent ?? m.content) }));
-  const showSupportPanel = stage === 'chat' && !feedbackRequested && lastIsAssistant;
+  // 상대역 응답 스트리밍이 완전히 끝나고(isLoading false) 마지막 상대역 말이 비어 있지 않을 때만 패널을 보여 줌
+  const showSupportPanel = stage === 'chat' && !feedbackRequested && lastIsAssistant && !isLoading;
+  // 학습자가 말을 보낸 뒤 다음 상대역 발화가 끝날 때까지: 이전 턴 도움은 지우고 준비 중 안내만 보여 줌
+  const showSupportWaiting = stage === 'chat' && !feedbackRequested && !showSupportPanel && isLoading && hasUserTurn;
+  const supportTarget = lastIsAssistant ? stripMetaForHistory(lastMsg.content) : '';
+  const supportTurnKey = `${sessionId}-${turnIndex}-${shortHash(supportTarget)}`;
+
+  // 자식 패널의 useEffect(마운트 시 starter 요청)보다 먼저 실행되도록 layout effect에서 최신 기록을 ref에 넣음
+  useLayoutEffect(() => {
+    supportHistoryRef.current = supportHistory;
+  });
+  const getSupportHistory = useCallback(() => supportHistoryRef.current, []);
 
   const handleSupportInsert = (text: string, source: InsertSource) => {
     // 자동 전송하지 않음: 입력창에 넣고 포커스만 옮김
@@ -493,12 +509,23 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
           )}
 
           {/* 도움 사다리 패널 (입력창 바로 위). 상대역 발화마다 key가 바뀌어 새로 마운트됨 */}
+          {showSupportWaiting && (
+            <div className="support-panel" aria-label="도움 사다리" aria-live="polite">
+              <p className="support-note">
+                다음 대답을 준비하고 있어요…
+                {difficulty === '초급' ? <span className="support-en-inline"> (Getting ready for the next reply…)</span> : null}
+              </p>
+            </div>
+          )}
           {showSupportPanel && (
             <RoleplaySupportPanel
-              key={`${sessionId}-${turnIndex}`}
+              key={supportTurnKey}
               sceneId={selectedScene.id}
               level={difficulty}
-              history={supportHistory}
+              getHistory={getSupportHistory}
+              targetText={supportTarget}
+              turnKey={supportTurnKey}
+              cache={supportCache}
               disabled={isLoading}
               onInsert={handleSupportInsert}
               onUse={handleSupportUse}

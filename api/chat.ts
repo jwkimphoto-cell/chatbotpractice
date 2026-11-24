@@ -149,9 +149,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: '전송할 유효한 메시지가 없습니다.' });
     }
 
-    // 도움 사다리: 대화 기록 뒤에 서버가 만든 요청 메시지 하나를 덧붙임 (화이트리스트 값만 사용)
+    // 도움 사다리: 대화 기록 뒤에 서버가 만든 요청 메시지 하나를 덧붙임.
+    // 종류·난이도는 화이트리스트 값, 상대역의 말·학습자 발화는 서버가 messages에서 직접 뽑음 (input에만 넣고 instructions에는 넣지 않음)
     if (mode === 'roleplay_support') {
-      inputItems.push({ role: 'user' as const, content: `[도움 요청] 종류: ${supportType} / 난이도: ${level}` });
+      const lastAssistant = messages[messages.length - 1].content.trim();
+      const learnerSaid = messages
+        .filter((m) => m && m.role === 'user' && typeof m.content === 'string')
+        .map((m) => m.content.replace(/^\[난이도:[^\]]*\]\s*/, '').trim())
+        .filter((t) => t.length > 0);
+      inputItems.push({
+        role: 'user' as const,
+        content: [
+          `[도움 요청] 종류: ${supportType} / 난이도: ${level}`,
+          `[지금 대답할 상대역의 말] ${lastAssistant}`,
+          `[학습자가 이미 말한 내용] ${learnerSaid.length > 0 ? learnerSaid.join(' / ') : '없음'}`,
+        ].join('\n'),
+      });
     }
 
     const openai = new OpenAI({
