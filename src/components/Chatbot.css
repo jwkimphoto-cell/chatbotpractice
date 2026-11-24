@@ -736,7 +736,7 @@
 
 .diff-btn-group {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 14px;
 }
 
@@ -1855,3 +1855,209 @@
 }
 
 
+
+
+/* ==========================================================================
+   롤플레이 도움 사다리 패널 (💡 방향 힌트 · ✏️ 문장 틀 · 🔘 보기 선택 · 👀 모범 답)
+   ========================================================================== */
+.support-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  max-height: 42vh;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.support-step {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.support-step-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-bottom: 6px;
+}
+
+.support-en,
+.support-en-inline {
+  color: #64748b;
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+.support-en {
+  display: block;
+}
+
+.support-hint-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.support-frame-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 6px;
+  font-size: 0.92rem;
+  line-height: 2;
+}
+
+.support-blank {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 0 0 auto;
+  width: 104px;
+  max-width: 100%;
+}
+
+/* 도움 패널이 열려도 상대역의 말이 보이도록 대화 영역 최소 높이 확보 */
+.roleplay-chat-pane .messages-container {
+  min-height: 140px;
+}
+
+.support-blank-input {
+  border: none;
+  border-bottom: 2px solid #2563eb;
+  background: #eff6ff;
+  border-radius: 4px 4px 0 0;
+  padding: 2px 6px;
+  font-size: 0.92rem;
+  font-family: inherit;
+  min-width: 0;
+  width: 100%;
+}
+
+.support-blank-input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+}
+
+.support-blank-hint {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.3;
+}
+
+.support-insert-btn {
+  margin-top: 8px;
+}
+
+.support-choice-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.support-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  font-size: 0.88rem;
+  font-family: inherit;
+  cursor: pointer;
+  color: #1f2937;
+}
+
+.support-choice:hover:not(:disabled) {
+  border-color: #2563eb;
+  background-color: #eff6ff;
+}
+
+.support-choice:disabled {
+  cursor: default;
+}
+
+.support-choice.chosen.appropriate {
+  border-color: #16a34a;
+  background-color: #f0fdf4;
+}
+
+.support-choice.chosen.partial {
+  border-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+.support-choice.chosen.inappropriate {
+  border-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.support-choice.highlight {
+  border: 2px solid #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+.support-choice-reason {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.support-model-text {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.support-note {
+  margin: 4px 0 0 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.support-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.support-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.support-link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.support-error {
+  margin: 0;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .support-panel {
+    padding: 8px 10px;
+    max-height: 34vh;
+  }
+
+  .support-blank {
+    width: 84px;
+  }
+
+  /* 375px: 보기 3개는 세로로 쌓음 */
+  .support-choice-list {
+    grid-template-columns: 1fr;
+  }
+}

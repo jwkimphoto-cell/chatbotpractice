@@ -218,3 +218,199 @@ export function extractResult(text: string): ParsedResult | null {
   }
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* 롤플레이 도움 사다리 응답 파싱 ([[SUPPORT]]{ JSON }[[/SUPPORT]])        */
+/* ------------------------------------------------------------------ */
+
+export type SupportKind = 'hint' | 'frame' | 'choices' | 'model' | 'starter';
+export type SupportVerdict = 'appropriate' | 'partial' | 'inappropriate';
+
+export interface SupportHint {
+  type: 'hint';
+  steps: string[];
+  steps_en: string[];
+}
+export interface SupportBlank {
+  id: number;
+  hint: string;
+  hint_en: string;
+}
+export interface SupportFrameBody {
+  template: string;
+  blanks: SupportBlank[];
+}
+export interface SupportChoiceOption {
+  id: string;
+  text: string;
+  verdict: SupportVerdict;
+  reason: string;
+  reason_en: string;
+}
+export interface SupportChoicesBody {
+  options: SupportChoiceOption[];
+}
+export interface SupportModel {
+  type: 'model';
+  text: string;
+  text_en: string;
+  tip: string;
+  tip_en: string;
+}
+export type SupportData =
+  | SupportHint
+  | ({ type: 'frame' } & SupportFrameBody)
+  | ({ type: 'choices' } & SupportChoicesBody)
+  | SupportModel
+  | { type: 'starter'; frame: SupportFrameBody; choices: SupportChoicesBody };
+
+export type SupportParseResult = { ok: true; data: SupportData } | { ok: false; error: string };
+
+const isNonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+const asStr = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** 블록 꺼내기: [[SUPPORT]]…[[/SUPPORT]], 없으면 첫 "{"부터 마지막 "}"까지. 코드 펜스는 제거 */
+function supportJsonText(text: string): string | null {
+  const block = text.match(/\[\[SUPPORT\]\]([\s\S]*?)\[\[\/SUPPORT\]\]/);
+  let body = block ? block[1] : null;
+  if (body === null) {
+    const a = text.indexOf('{');
+    const b = text.lastIndexOf('}');
+    if (a === -1 || b <= a) return null;
+    body = text.slice(a, b + 1);
+  }
+  return body.replace(/```(?:json)?/gi, '').trim();
+}
+
+/*
+ * 빈칸 hint의 조사 안내는 모델에 맡기지 않고 화면이 정함.
+ * 1) 모델이 쓴 조사 안내("+ 이", "와 '이/가'", "followed by 이 or 가" 등)는 지움 (틀과 어긋나는 경우가 반복됐음)
+ * 2) 틀에서 빈칸 바로 뒤에 '있다/없다'가 오면 "+ 이/가"를 붙임 (거의 항상 '이/가'가 필요한 자리)
+ *    단, 힌트가 숫자·개수를 가리키면 붙이지 않음 ("문제가 하나 있습니다"의 '하나'에는 '이/가'가 붙지 않음)
+ */
+const P1 = '(?:이|가|을|를|은|는|과|와)';
+const PARTICLE_FORM = `[‘'"“]?${P1}(?:\\s*/\\s*${P1})?[’'"”]?`;
+const KO_PARTICLE_TAIL = new RegExp(`\\s*(?:\\+|와|과|및)\\s*${PARTICLE_FORM}\\s*$`);
+const EN_PARTICLE_TAIL = new RegExp(`\\s*,?\\s*(?:\\+|followed by|plus|and)\\s*${PARTICLE_FORM}(?:\\s*or\\s*${PARTICLE_FORM})?\\s*\\.?\\s*$`, 'i');
+
+export function stripParticleGuide(hint: string): string {
+  return hint.replace(KO_PARTICLE_TAIL, '').replace(EN_PARTICLE_TAIL, '').trim();
+}
+
+/** 힌트가 숫자·개수를 가리키는지 (예: "숫자", "문제의 수", "몇 개", "number") — 이런 빈칸에는 '이/가'가 붙지 않음 */
+const QUANTITY_HINT = /숫자|개수|몇|(?:^|\s|의\s?)수(?:$|\s|\))|\bnumber\b|how many|\bcount\b/i;
+
+export function normalizeBlankHint(template: string, blank: SupportBlank): SupportBlank {
+  const hint = stripParticleGuide(blank.hint);
+  let hintEn = stripParticleGuide(blank.hint_en).replace(/[.\s]+$/, '');
+  const isQuantity = QUANTITY_HINT.test(hint) || QUANTITY_HINT.test(hintEn);
+  const needsSubject = !isQuantity && new RegExp(`\\{\\{${blank.id}\\}\\}\\s+(?:있|없)`).test(template);
+  if (!needsSubject) return { ...blank, hint: hint || blank.hint, hint_en: hintEn };
+  if (hintEn) hintEn = `${hintEn} + 이/가`;
+  return { ...blank, hint: `${hint || blank.hint} + 이/가`, hint_en: hintEn };
+}
+
+/** {{n}} 번호와 blanks id 일치, 빈칸 1~3개, hint 필수 */
+export function validateFrame(v: unknown): SupportFrameBody | string {
+  if (!v || typeof v !== 'object') return 'frame이 객체가 아님';
+  const f = v as Record<string, unknown>;
+  if (!isNonEmpty(f.template)) return 'template 없음';
+  const nums = [...f.template.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
+  const uniq = [...new Set(nums)].sort((a, b) => a - b);
+  if (uniq.length < 1 || uniq.length > 3) return '빈칸 개수가 1~3개가 아님';
+  // 빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 고정돼 있으면, 학습자가 바르게 채워도 틀린 문장이 됨 (예: "{{2}}이 있습니다")
+  if (/\{\{\d+\}\}(?:이|가|을|를|은|는|과|와)(?=[\s.,!?]|$)/.test(f.template)) return '빈칸 바로 뒤에 받침에 따라 바뀌는 조사가 있음';
+  // 빈칸이 문장 끝에 있으면 학습자가 서술어·어미까지 직접 만들어야 함 (예: "장소 계약에 {{2}}.")
+  if (/\{\{\d+\}\}\s*(?:[.?!。]|$)/.test(f.template.trim())) return '빈칸이 문장 끝에 있음 (빈칸 뒤에 서술어가 없음)';
+  if (!Array.isArray(f.blanks)) return 'blanks가 배열이 아님';
+  const blanks: SupportBlank[] = [];
+  for (const raw of f.blanks) {
+    if (!raw || typeof raw !== 'object') return 'blank 항목이 객체가 아님';
+    const b = raw as Record<string, unknown>;
+    const id = typeof b.id === 'number' ? b.id : Number(b.id);
+    if (!Number.isInteger(id)) return 'blank id가 숫자가 아님';
+    if (!isNonEmpty(b.hint)) return `blank ${id}의 hint 없음`;
+    blanks.push(normalizeBlankHint(f.template, { id, hint: b.hint.trim(), hint_en: asStr(b.hint_en).trim() }));
+  }
+  const ids = [...new Set(blanks.map((b) => b.id))].sort((a, b) => a - b);
+  if (ids.length !== blanks.length) return 'blank id 중복';
+  if (JSON.stringify(ids) !== JSON.stringify(uniq)) return 'template의 {{n}}과 blanks id가 다름';
+  return { template: f.template.trim(), blanks };
+}
+
+/** 보기 정확히 3개, verdict는 appropriate·partial·inappropriate 각 1개 */
+export function validateChoices(v: unknown): SupportChoicesBody | string {
+  if (!v || typeof v !== 'object') return 'choices가 객체가 아님';
+  const c = v as Record<string, unknown>;
+  if (!Array.isArray(c.options) || c.options.length !== 3) return '보기가 정확히 3개가 아님';
+  const options: SupportChoiceOption[] = [];
+  for (const raw of c.options) {
+    if (!raw || typeof raw !== 'object') return '보기 항목이 객체가 아님';
+    const o = raw as Record<string, unknown>;
+    if (!isNonEmpty(o.text) || !isNonEmpty(o.reason)) return '보기의 text 또는 reason 없음';
+    if (o.verdict !== 'appropriate' && o.verdict !== 'partial' && o.verdict !== 'inappropriate') return 'verdict 값이 잘못됨';
+    options.push({
+      id: isNonEmpty(o.id) ? o.id.trim() : String(options.length + 1),
+      text: o.text.trim(),
+      verdict: o.verdict,
+      reason: o.reason.trim(),
+      reason_en: asStr(o.reason_en).trim(),
+    });
+  }
+  const count = (vd: SupportVerdict) => options.filter((o) => o.verdict === vd).length;
+  if (count('appropriate') !== 1 || count('partial') !== 1 || count('inappropriate') !== 1) {
+    return 'verdict 구성이 appropriate·partial·inappropriate 각 1개가 아님';
+  }
+  return { options };
+}
+
+/**
+ * 도움 응답 파싱 + 구조 검증. 실패해도 예외를 던지지 않고 { ok: false }를 돌려줌(화면은 [다시 시도] 표시).
+ * @param expected 요청한 도움 종류 (응답의 type과 같아야 함)
+ */
+export function extractSupport(text: string, expected: SupportKind): SupportParseResult {
+  const body = supportJsonText(text || '');
+  if (!body) return { ok: false, error: 'JSON을 찾지 못함' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { ok: false, error: 'JSON 파싱 실패' };
+  }
+  if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'JSON이 객체가 아님' };
+  const p = parsed as Record<string, unknown>;
+  if (p.type !== expected) return { ok: false, error: `type이 ${expected}가 아님` };
+
+  if (expected === 'hint') {
+    if (!Array.isArray(p.steps) || p.steps.length < 2 || p.steps.length > 3 || !p.steps.every(isNonEmpty)) {
+      return { ok: false, error: 'steps가 2~3개의 문장이 아님' };
+    }
+    const steps = (p.steps as string[]).map((x) => x.trim());
+    let stepsEn: string[];
+    if (p.steps_en === undefined) stepsEn = steps.map(() => '');
+    else if (Array.isArray(p.steps_en) && p.steps_en.length === steps.length) stepsEn = p.steps_en.map((x) => asStr(x).trim());
+    else return { ok: false, error: 'steps_en 개수가 steps와 다름' };
+    return { ok: true, data: { type: 'hint', steps, steps_en: stepsEn } };
+  }
+  if (expected === 'frame') {
+    const f = validateFrame(p);
+    return typeof f === 'string' ? { ok: false, error: f } : { ok: true, data: { type: 'frame', ...f } };
+  }
+  if (expected === 'choices') {
+    const c = validateChoices(p);
+    return typeof c === 'string' ? { ok: false, error: c } : { ok: true, data: { type: 'choices', ...c } };
+  }
+  if (expected === 'model') {
+    if (!isNonEmpty(p.text) || !isNonEmpty(p.tip)) return { ok: false, error: 'text 또는 tip 없음' };
+    return {
+      ok: true,
+      data: { type: 'model', text: p.text.trim(), text_en: asStr(p.text_en).trim(), tip: p.tip.trim(), tip_en: asStr(p.tip_en).trim() },
+    };
+  }
+  // starter
+  const f = validateFrame(p.frame);
+  if (typeof f === 'string') return { ok: false, error: `starter.frame: ${f}` };
+  const c = validateChoices(p.choices);
+  if (typeof c === 'string') return { ok: false, error: `starter.choices: ${c}` };
+  return { ok: true, data: { type: 'starter', frame: f, choices: c } };
+}

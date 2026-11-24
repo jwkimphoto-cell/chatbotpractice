@@ -8,11 +8,27 @@ export interface ChatApiResponse {
   error?: string;
 }
 
-export type ChatMode = 'expression' | 'roleplay' | 'email' | 'review';
+export type ChatMode = 'expression' | 'roleplay' | 'email' | 'review' | 'roleplay_support';
+export type RoleplayLevel = '초급' | '중급' | '고급';
+export type SupportType = 'hint' | 'frame' | 'choices' | 'model' | 'starter';
 
 export interface StreamChatOptions {
   mode?: ChatMode;
   sceneId?: string;
+  /** roleplay_support 전용 */
+  level?: RoleplayLevel;
+  /** roleplay_support 전용 */
+  supportType?: SupportType;
+}
+
+/** 서버 오류 응답. status로 429(한도 초과) 등을 구분할 수 있음 */
+export class ChatApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ChatApiError';
+    this.status = status;
+  }
 }
 
 /** SSE 스트림에서 수신하는 개별 이벤트 타입 */
@@ -40,10 +56,14 @@ export async function streamChatMessage(
     messages: ChatMessage[];
     mode?: ChatMode;
     sceneId?: string;
+    level?: RoleplayLevel;
+    supportType?: SupportType;
   } = {
     messages,
     ...(options?.mode ? { mode: options.mode } : {}),
     ...(options?.sceneId ? { sceneId: options.sceneId } : {}),
+    ...(options?.level ? { level: options.level } : {}),
+    ...(options?.supportType ? { supportType: options.supportType } : {}),
   };
 
   const response = await fetch('/api/chat', {
@@ -58,11 +78,11 @@ export async function streamChatMessage(
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     const data: ChatApiResponse = await response.json().catch(() => ({}));
-    throw new Error(data.error || `서버 요청 실패 (상태 코드: ${response.status})`);
+    throw new ChatApiError(data.error || `서버 요청 실패 (상태 코드: ${response.status})`, response.status);
   }
 
   if (!response.ok) {
-    throw new Error(`서버 요청 실패 (상태 코드: ${response.status})`);
+    throw new ChatApiError(`서버 요청 실패 (상태 코드: ${response.status})`, response.status);
   }
 
   if (!response.body) {

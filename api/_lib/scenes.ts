@@ -5,6 +5,8 @@ export interface ServerScene {
   situation: string;
   goal: string;
   firstMessage: string;
+  /** 초급 롤플레이 첫 대사 (짧은 해요체) */
+  openingLineBeginner: string;
 }
 
 export const SERVER_SCENES: Record<string, ServerScene> = {
@@ -15,6 +17,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     situation: '금요일까지 내기로 한 시장 조사 보고서가 자료 수집 지연으로 다음 주 화요일로 늦어질 것 같음',
     goal: '결론(지연) → 원인 → 대책·새 일정 순서로 보고하기',
     firstMessage: '지금 잠깐 괜찮아요? 지난주에 맡긴 시장 조사 보고서는 어떻게 되고 있어요?',
+    openingLineBeginner: '보고서는 어떻게 돼요?',
   },
   'report-progress': {
     id: 'report-progress',
@@ -23,6 +26,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     situation: '행사 준비가 약 70% 진행됐고, 장소 계약에 문제가 하나 있음',
     goal: '핵심 먼저, 수치로 짧게 보고하기',
     firstMessage: '이번 행사 준비 진행 상황 좀 간단히 말해 줄래요?',
+    openingLineBeginner: '행사 준비는 어때요?',
   },
   'meeting-disagree': {
     id: 'meeting-disagree',
@@ -31,6 +35,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     situation: '신제품 홍보를 SNS 광고로만 하자는 제안에 예산·주 고객층 문제로 다른 의견이 있음',
     goal: '상대 의견 인정 → 완곡한 반대 → 근거 → 대안',
     firstMessage: '그럼 이번 홍보는 SNS 광고로만 진행하는 걸로 정리할게요. 다른 의견 있으세요?',
+    openingLineBeginner: 'SNS 광고만 할까요? 다른 생각 있어요?',
   },
   'meeting-schedule': {
     id: 'meeting-schedule',
@@ -39,6 +44,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     situation: '목요일 오후 회의에 출장 때문에 참석하기 어려움',
     goal: '사정 설명 + 대안 시간 제시',
     firstMessage: '목요일 오후 2시 회의 초대 보냈는데 확인했어요?',
+    openingLineBeginner: '목요일 회의, 괜찮아요?',
   },
   'client-postpone': {
     id: 'client-postpone',
@@ -47,6 +53,7 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     situation: '내일 오전 미팅을 내부 사정으로 다음 주로 미뤄야 함',
     goal: '사과 → 간단한 사유 → 대안 일정 제안 → 양해 구하기',
     firstMessage: '네, 한빛상사 최민수입니다.',
+    openingLineBeginner: '네, 한빛상사 최민수입니다.',
   },
   'colleague-request': {
     id: 'colleague-request',
@@ -55,5 +62,6 @@ export const SERVER_SCENES: Record<string, ServerScene> = {
     situation: '분기 예산 자료가 필요하지만 상대도 바쁜 시기임',
     goal: '쿠션어 + 구체적 요청(무엇을, 언제까지)',
     firstMessage: '네, 재무팀 정하나입니다. 무슨 일이세요?',
+    openingLineBeginner: '네, 재무팀 정하나입니다. 무슨 일이세요?',
   },
 };

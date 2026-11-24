@@ -5,6 +5,9 @@ import {
   buildRoleplayPrompt,
   EMAIL_COACH_PROMPT,
   REVIEW_GRADER_PROMPT,
+  buildRoleplaySupportInstructions,
+  type RoleplayLevel,
+  type SupportType,
 } from './_lib/prompts.js';
 import { SERVER_SCENES } from './_lib/scenes.js';
 import {
@@ -23,8 +26,12 @@ interface IncomingMessage {
   content: string;
 }
 
-const ALLOWED_MODES = ['expression', 'roleplay', 'email', 'review'] as const;
+const ALLOWED_MODES = ['expression', 'roleplay', 'email', 'review', 'roleplay_support'] as const;
 type ChatMode = (typeof ALLOWED_MODES)[number];
+
+/** 롤플레이 도움 사다리 화이트리스트 */
+const ALLOWED_LEVELS: readonly RoleplayLevel[] = ['초급', '중급', '고급'];
+const ALLOWED_SUPPORT_TYPES: readonly SupportType[] = ['hint', 'frame', 'choices', 'model', 'starter'];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS 및 메서드 허용
@@ -46,10 +53,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { mode: rawMode, sceneId, messages } = (req.body || {}) as {
+    const { mode: rawMode, sceneId, messages, level, supportType } = (req.body || {}) as {
       mode?: string;
       sceneId?: string;
       messages?: IncomingMessage[];
+      level?: string;
+      supportType?: string;
     };
 
     // 1. 모드 검사 (기본값: 'expression')
@@ -99,6 +108,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: '유효한 장면(sceneId)을 선택해 주세요.' });
       }
       instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId]);
+    } else if (mode === 'roleplay_support') {
+      // 도움 사다리: level·supportType·sceneId는 화이트리스트 값만 허용, instructions는 서버 데이터로만 조립
+      if (typeof level !== 'string' || !(ALLOWED_LEVELS as readonly string[]).includes(level)) {
+        return res.status(400).json({ error: '난이도(level)는 초급, 중급, 고급 중 하나여야 합니다.' });
+      }
+      if (typeof supportType !== 'string' || !(ALLOWED_SUPPORT_TYPES as readonly string[]).includes(supportType)) {
+        return res.status(400).json({ error: '지원하지 않는 도움 종류(supportType)입니다.' });
+      }
+      if (supportType === 'starter' && level !== '초급') {
+        return res.status(400).json({ error: 'starter 도움은 초급에서만 쓸 수 있습니다.' });
+      }
+      if (typeof sceneId !== 'string' || !Object.hasOwn(SERVER_SCENES, sceneId)) {
+        return res.status(400).json({ error: '유효한 장면(sceneId)을 선택해 주세요.' });
+      }
+      const last = messages[messages.length - 1];
+      if (!last || last.role !== 'assistant') {
+        return res.status(400).json({ error: '도움은 상대역의 말 다음에만 요청할 수 있습니다. 마지막 메시지가 상대역(assistant)의 말이어야 합니다.' });
+      }
+      instructions = buildRoleplaySupportInstructions(
+        SERVER_SCENES[sceneId],
+        level as RoleplayLevel,
+        supportType as SupportType,
+      );
     } else if (mode === 'email') {
       instructions = EMAIL_COACH_PROMPT;
     } else if (mode === 'review') {
@@ -115,6 +147,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (inputItems.length === 0) {
       return res.status(400).json({ error: '전송할 유효한 메시지가 없습니다.' });
+    }
+
+    // 도움 사다리: 대화 기록 뒤에 서버가 만든 요청 메시지 하나를 덧붙임 (화이트리스트 값만 사용)
+    if (mode === 'roleplay_support') {
+      inputItems.push({ role: 'user' as const, content: `[도움 요청] 종류: ${supportType} / 난이도: ${level}` });
     }
 
     const openai = new OpenAI({
@@ -155,7 +192,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 아직 SSE 헤더를 보내기 전에 에러가 발생한 경우 JSON 에러 응답
     if (!res.headersSent) {
-      return res.status(500).json({ error: errorMessage });
+      // OpenAI 한도 초과(429)는 그대로 429로 전달해 화면이 "잠시 후 다시 시도" 안내를 보여 줄 수 있게 함
+      const status = error?.status === 429 ? 429 : 500;
+      return res.status(status).json({ error: errorMessage });
     }
 
     // 이미 SSE 스트리밍 중이면 에러 이벤트로 전송

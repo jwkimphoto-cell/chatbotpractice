@@ -1,13 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { streamChatMessage, type ChatMessage } from '../api/chat';
+import { streamChatMessage, type ChatMessage, type RoleplayLevel } from '../api/chat';
 import { SCENES, type SceneCardData } from '../data/scenes';
 import { cleanDisplayContent, extractNotes, stripMetaForHistory, type ParsedNoteItem } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
+import { RoleplaySupportPanel, type InsertSource, type StepType } from './RoleplaySupportPanel';
+import type { SupportVerdict } from '../utils/meta';
+import { buildUsageBlock, emptyUsage, type SupportUsage } from '../utils/supportUsage';
 
 interface DisplayMessage extends ChatMessage {
   id: string;
+  /** API 전송용 텍스트 (없으면 content). [피드백 받기]에만 [도움 사용 기록]을 붙이고 말풍선에는 보이지 않게 함 */
+  apiContent?: string;
 }
+
+const FEEDBACK_TEXT = '[피드백 요청] 대화를 마치고 피드백을 주세요.';
 
 interface RoleplayPracticeProps {
   onStreamingChange?: (isStreaming: boolean) => void;
@@ -21,7 +28,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   // 단계: 'select-scene' (장면 선택) -> 'select-diff' (난이도 선택) -> 'chat' (대화 및 피드백)
   const [stage, setStage] = useState<'select-scene' | 'select-diff' | 'chat'>('select-scene');
   const [selectedScene, setSelectedScene] = useState<SceneCardData | null>(null);
-  const [difficulty, setDifficulty] = useState<'중급' | '고급'>('중급');
+  const [difficulty, setDifficulty] = useState<RoleplayLevel>('중급');
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
@@ -33,6 +40,12 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   const [feedbackNotes, setFeedbackNotes] = useState<ParsedNoteItem[]>([]);
   const [selectedNoteIndices, setSelectedNoteIndices] = useState<Set<number>>(new Set());
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+
+  // 도움 사다리 상태: 세션(장면 시작)마다 새로, 피드백 이후에는 패널 숨김
+  const [sessionId, setSessionId] = useState(0);
+  const [feedbackRequested, setFeedbackRequested] = useState(false);
+  const usageRef = useRef<SupportUsage>(emptyUsage());
+  const pendingInsertRef = useRef<{ text: string; source: InsertSource } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -53,7 +66,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   };
 
   // 2단계: 난이도 선택 후 대화 시작 (AI 첫 대사 즉시 표시)
-  const handleStartRoleplay = (chosenDiff: '중급' | '고급') => {
+  const handleStartRoleplay = (chosenDiff: RoleplayLevel) => {
     if (!selectedScene) return;
     setDifficulty(chosenDiff);
     setStage('chat');
@@ -61,12 +74,17 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
     setFeedbackNotes([]);
     setSelectedNoteIndices(new Set());
     setSaveSuccessMessage(null);
+    // 도움 패널·캐시·사용 기록 초기화 (패널 key가 바뀌어 새로 마운트됨)
+    setSessionId((n) => n + 1);
+    setFeedbackRequested(false);
+    usageRef.current = emptyUsage();
+    pendingInsertRef.current = null;
 
-    // AI 첫 대사를 즉시 대화에 추가 (API 호출 없이 바로 표시)
+    // AI 첫 대사를 즉시 대화에 추가 (API 호출 없이 바로 표시). 초급은 짧은 첫 대사
     const firstAssistantMsg: DisplayMessage = {
       id: `ai-${Date.now()}`,
       role: 'assistant',
-      content: selectedScene.firstMessage,
+      content: chosenDiff === '초급' ? selectedScene.openingLineBeginner : selectedScene.firstMessage,
     };
     setMessages([firstAssistantMsg]);
   };
@@ -85,6 +103,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   const handleSendMessage = async (customText?: string) => {
     const textToSend = (customText ?? input).trim();
     if (!textToSend || isLoading || !selectedScene) return;
+    const isFeedback = textToSend === FEEDBACK_TEXT;
 
     setErrorMessage(null);
     setSaveSuccessMessage(null);
@@ -96,10 +115,22 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       finalContent = `[난이도: ${difficulty}] ${textToSend}`;
     }
 
+    // 도움 사용 기록: [입력창에 넣기]로 시작한 발화인지, 보내기 전에 고쳤는지
+    if (!isFeedback && pendingInsertRef.current) {
+      const ins = pendingInsertRef.current;
+      usageRef.current.helped.push({ index: userMessageCount + 1, source: ins.source, modified: textToSend !== ins.text.trim() });
+    }
+    pendingInsertRef.current = null;
+
+    // [피드백 받기]: 전송용 텍스트에만 [도움 사용 기록]을 붙임 (말풍선과 instructions에는 넣지 않음)
+    const usageBlock = isFeedback ? buildUsageBlock(usageRef.current, userMessageCount) : '';
+    if (isFeedback) setFeedbackRequested(true);
+
     const userMessage: DisplayMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: finalContent,
+      ...(usageBlock ? { apiContent: finalContent + usageBlock } : {}),
     };
 
     const newMessages = [...messages, userMessage];
@@ -126,7 +157,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       // 서버 재전송용 메시지: 메타 블록을 제거한 순수 대화 기록만 전달
       const apiPayload: ChatMessage[] = newMessages.map((m) => ({
         role: m.role,
-        content: stripMetaForHistory(m.content),
+        content: stripMetaForHistory(m.apiContent ?? m.content),
       }));
 
       const reply = await streamChatMessage(
@@ -167,7 +198,38 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
   // [피드백 받기] 버튼 클릭
   const handleRequestFeedback = () => {
     if (isLoading || !hasUserTurn) return;
-    handleSendMessage('[피드백 요청] 대화를 마치고 피드백을 주세요.');
+    handleSendMessage(FEEDBACK_TEXT);
+  };
+
+  // ---------- 도움 사다리 연결 ----------
+  // 상대역 발화 번호(turnIndex): 다 받은 상대역 메시지 수. 바뀌면 패널을 새로 마운트(이전 턴 도움 숨김)
+  const completedAssistant = messages.filter((m) => m.role === 'assistant' && m.id !== streamingId && m.content.trim() !== '');
+  const turnIndex = completedAssistant.length;
+  const lastMsg = messages[messages.length - 1];
+  const lastIsAssistant = !!lastMsg && lastMsg.role === 'assistant' && lastMsg.id !== streamingId && lastMsg.content.trim() !== '';
+  // 도움 요청에 보낼 대화 기록: 실제 대화(학습자 말 + 상대역 말)만, 메타 블록 제거
+  const supportHistory: ChatMessage[] = messages
+    .filter((m) => m.id !== streamingId && m.content.trim() !== '')
+    .map((m) => ({ role: m.role, content: stripMetaForHistory(m.apiContent ?? m.content) }));
+  const showSupportPanel = stage === 'chat' && !feedbackRequested && lastIsAssistant;
+
+  const handleSupportInsert = (text: string, source: InsertSource) => {
+    // 자동 전송하지 않음: 입력창에 넣고 포커스만 옮김
+    setInput(text);
+    pendingInsertRef.current = { text, source };
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
+    });
+  };
+  const handleSupportUse = (type: StepType) => {
+    usageRef.current.counts[type] += 1;
+  };
+  const handleFirstChoice = (verdict: SupportVerdict) => {
+    usageRef.current.firstChoices.push(verdict);
   };
 
   // 노트 체크박스 토글
@@ -284,6 +346,14 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
             <h4>난이도를 선택해 주세요</h4>
             <p>난이도에 따라 AI 상대역의 대화 속도와 어휘 수준이 조절됩니다.</p>
             <div className="diff-btn-group">
+              <button
+                type="button"
+                className="diff-choice-btn beginner"
+                onClick={() => handleStartRoleplay('초급')}
+              >
+                <div className="diff-title">🟢 초급</div>
+                <div className="diff-desc">짧고 쉬운 해요체 대화, 문장 틀과 보기로 도움을 받으며 말하기</div>
+              </button>
               <button
                 type="button"
                 className="diff-choice-btn medium"
@@ -420,6 +490,20 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
                 )}
               </div>
             </div>
+          )}
+
+          {/* 도움 사다리 패널 (입력창 바로 위). 상대역 발화마다 key가 바뀌어 새로 마운트됨 */}
+          {showSupportPanel && (
+            <RoleplaySupportPanel
+              key={`${sessionId}-${turnIndex}`}
+              sceneId={selectedScene.id}
+              level={difficulty}
+              history={supportHistory}
+              disabled={isLoading}
+              onInsert={handleSupportInsert}
+              onUse={handleSupportUse}
+              onFirstChoice={handleFirstChoice}
+            />
           )}
 
           {/* 메시지 입력창 */}
