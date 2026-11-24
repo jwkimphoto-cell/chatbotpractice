@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage, type RoleplayLevel } from '../api/chat';
 import { SCENES, type SceneCardData } from '../data/scenes';
-import { cleanDisplayContent, extractNotes, shortHash, type ParsedNoteItem, type SupportData } from '../utils/meta';
+import { beginnerReplyIssues, cleanDisplayContent, extractNotes, shortHash, type ParsedNoteItem, type SupportData } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
 import { RoleplaySupportPanel, type InsertSource, type StepType } from './RoleplaySupportPanel';
 import type { SupportVerdict } from '../utils/meta';
 import { buildUsageBlock, emptyUsage, type SupportUsage } from '../utils/supportUsage';
-import { buildRoleplayPayload, supportPanelState } from '../utils/chatState';
+import { buildRoleplayPayload, pickBeginnerReply, supportPanelState } from '../utils/chatState';
 
 interface DisplayMessage extends ChatMessage {
   id: string;
@@ -163,11 +163,36 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
       // 서버 재전송용 메시지: 메타 블록을 제거한 순수 대화 기록만 전달
       const apiPayload: ChatMessage[] = buildRoleplayPayload(newMessages);
 
-      const reply = await streamChatMessage(
+      let reply = await streamChatMessage(
         apiPayload,
         (chunk) => appendDelta(assistantId, chunk),
         { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty },
       );
+
+      // 초급 상대역 말 점검: 초급 기준(문장 수·어절·문형·어휘)을 넘으면 같은 기록으로 1회 다시 받음.
+      // 다시 받는 동안 isLoading이 유지되어 도움 패널은 열리지 않고, 말풍선은 비워서 입력 중 표시를 보여 줌
+      if (difficulty === '초급' && !isFeedback) {
+        const learnerSaid = newMessages.filter((m) => m.role === 'user').map((m) => m.content);
+        const firstIssues = beginnerReplyIssues(reply, learnerSaid);
+        if (firstIssues.length > 0) {
+          if (import.meta.env.DEV) console.warn('[Roleplay] 초급 상대역 말이 기준을 넘어 다시 받음', { 문제: firstIssues, 원래말: reply });
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: '' } : m)));
+          try {
+            const retry = await streamChatMessage(
+              apiPayload,
+              (chunk) => appendDelta(assistantId, chunk),
+              { mode: 'roleplay', sceneId: selectedScene.id, level: difficulty, simplify: true },
+            );
+            const picked = pickBeginnerReply(reply, firstIssues, retry, beginnerReplyIssues(retry, learnerSaid));
+            reply = picked.text;
+            if (picked.issues.length > 0 && import.meta.env.DEV) console.warn('[Roleplay] 다시 받은 말도 초급 기준을 넘음 (나은 쪽 표시)', picked.issues);
+          } catch (retryError) {
+            // 다시 받기에 실패하면 처음 말을 그대로 보여 줌 (대화가 끊기지 않게)
+            console.warn('[Roleplay] 초급 상대역 다시 받기 실패, 처음 말을 표시', retryError);
+          }
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: reply } : m)));
+        }
+      }
 
       // 피드백 요청 메시지였거나 응답에 NOTES가 포함된 경우 노트 추출
       const extracted = extractNotes(reply);

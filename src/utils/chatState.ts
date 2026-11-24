@@ -88,3 +88,11 @@ export function choiceState(options: ChoiceOptionLike[], picked: string[]): Choi
   const pickedCorrect = correct ? picked.includes(correct.id) : false;
   return { wrongCount, pickedCorrect, highlightCorrect: !pickedCorrect && wrongCount >= 2, canInsert: pickedCorrect };
 }
+
+/**
+ * 초급 상대역 발화를 다시 받았을 때 어느 쪽을 보여 줄지: 다시 받은 말이 문제가 같거나 적으면 다시 받은 말,
+ * 더 많으면 처음 말 (다시 받는 것은 1회뿐이므로 둘 중 나은 쪽을 고름)
+ */
+export function pickBeginnerReply(first: string, firstIssues: string[], retry: string, retryIssues: string[]): { text: string; issues: string[] } {
+  return retryIssues.length <= firstIssues.length ? { text: retry, issues: retryIssues } : { text: first, issues: firstIssues };
+}

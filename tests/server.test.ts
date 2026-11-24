@@ -42,6 +42,8 @@ describe('서버 입력 검증 (400)', () => {
     ['롤플레이 sceneId 없음', { mode: 'roleplay', level: '중급', messages: [ai('a'), user('b')] }],
     ['롤플레이 프로토타입 키 sceneId', { mode: 'roleplay', sceneId: '__proto__', level: '중급', messages: [ai('a'), user('b')] }],
     ['롤플레이 잘못된 level', { mode: 'roleplay', sceneId: 'report-delay', level: '최상급', messages: [ai('a'), user('b')] }],
+    ['simplify를 중급 롤플레이에', { mode: 'roleplay', sceneId: 'report-delay', level: '중급', simplify: true, messages: [ai('a'), user('b')] }],
+    ['simplify가 true가 아님', { mode: 'roleplay', sceneId: 'report-delay', level: '초급', simplify: '쉽게', messages: [ai('a'), user('b')] }],
     ['도움: 잘못된 level', { mode: 'roleplay_support', sceneId: 'report-delay', level: 'beginner', supportType: 'hint', messages: [ai('a')] }],
     ['도움: 잘못된 supportType', { mode: 'roleplay_support', sceneId: 'report-delay', level: '중급', supportType: 'answer', messages: [ai('a')] }],
     ['도움: 중급 + starter', { mode: 'roleplay_support', sceneId: 'report-delay', level: '중급', supportType: 'starter', messages: [ai('a')] }],
@@ -113,4 +115,13 @@ test('첫 세트도 서버가 그 주제 목록의 문형 3개를 지정함', as
   const { buildStartInstruction } = await import('../api/_lib/patterns.ts');
   const text = buildStartInstruction({ topic: '회의', level: '고급' });
   assert.match(text, /1\. V-\(으\)ㄹ까 하다\n2\. V-지 말고\n3\. A\/V-기는 하지만/);
+});
+
+test('초급 다시 말하기 안내는 simplify일 때만, 고정 문구로 붙음', () => {
+  const scene = SERVER_SCENES['meeting-disagree'];
+  assert.doesNotMatch(prompts.buildRoleplayPrompt(scene, '초급'), /\[다시 말하기/);
+  const text = prompts.buildRoleplayPrompt(scene, '초급', true);
+  assert.match(text, /\[다시 말하기 \(서버 안내\)\]/);
+  assert.match(text, /방법, 의견/);
+  assert.doesNotMatch(prompts.buildRoleplayPrompt(scene, '중급', true), /\[다시 말하기/);
 });

@@ -58,13 +58,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate } = (req.body || {}) as {
+    const { mode: rawMode, sceneId, messages, level, supportType, frameTemplate, simplify } = (req.body || {}) as {
       mode?: string;
       sceneId?: string;
       messages?: IncomingMessage[];
       level?: string;
       supportType?: string;
       frameTemplate?: unknown;
+      simplify?: unknown;
     };
 
     // 1. 모드 검사 (기본값: 'expression')
@@ -129,7 +130,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (typeof level !== 'string' || !(ALLOWED_LEVELS as readonly string[]).includes(level)) {
         return res.status(400).json({ error: '난이도(level)는 초급, 중급, 고급 중 하나여야 합니다.' });
       }
-      instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId], level as RoleplayLevel);
+      // 초급 상대역 다시 말하기: 화면이 상대역 말이 초급 기준을 넘는다고 판단했을 때만 true (고정 안내 문구를 붙임)
+      if (simplify !== undefined && (simplify !== true || level !== '초급')) {
+        return res.status(400).json({ error: 'simplify는 초급 롤플레이에서 true로만 보낼 수 있습니다.' });
+      }
+      instructions = buildRoleplayPrompt(SERVER_SCENES[sceneId], level as RoleplayLevel, simplify === true);
     } else if (mode === 'roleplay_support') {
       // 도움 사다리: level·supportType·sceneId는 화이트리스트 값만 허용, instructions는 서버 데이터로만 조립
       if (typeof level !== 'string' || !(ALLOWED_LEVELS as readonly string[]).includes(level)) {

@@ -64,3 +64,14 @@ describe('롤플레이 전송용 기록', () => {
     ]);
   });
 });
+
+describe('초급 상대역 다시 받기 선택', async () => {
+  const { pickBeginnerReply } = await import('../src/utils/chatState.ts');
+  test('다시 받은 말의 문제가 같거나 적으면 다시 받은 말', () => {
+    assert.equal(pickBeginnerReply('a', ['x'], 'b', []).text, 'b');
+    assert.equal(pickBeginnerReply('a', ['x'], 'b', ['y']).text, 'b');
+  });
+  test('다시 받은 말이 더 나쁘면 처음 말', () => {
+    assert.equal(pickBeginnerReply('a', ['x'], 'b', ['y', 'z']).text, 'a');
+  });
+});

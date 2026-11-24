@@ -754,3 +754,58 @@ export function repeatsLearner(data: SupportData, learnerSaid: string[]): string
   const hit = own.find((x) => said.includes(x));
   return hit ? `학습자가 이미 말한 문장을 반복: "${hit}"` : null;
 }
+
+/* ------------------------------------------------------------------ */
+/* 초급 롤플레이 상대역 발화 점검 (화면이 검사하고, 어긋나면 1회 다시 받음) */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 초급에서 쓰지 않는 위 단계 명사 (api/_lib/level-rules.ts VOCAB의 중급·고급 명사와 같아야 함 — tests/meta.test.ts가 확인).
+ * src와 api는 서로 import하지 않으므로 목록을 옮겨 둠. 동사(늦다 등)는 초급 장면 문구에도 쓰여 검사하지 않음.
+ */
+export const BEGINNER_BANNED_NOUNS = ['일정', '출장', '손님', '고객', '거래처', '발표', '계획', '방법', '의견', '결과', '제품', '주문', '예약', '회신', '첨부 파일', '담당자'];
+
+/** 받침이 ㄹ인 글자인지 (예: '할'·'볼' → '-(으)ㄹ게요' 판별용) */
+function endsWithRieul(ch: string): boolean {
+  const code = ch.charCodeAt(0) - 0xac00;
+  return code >= 0 && code <= 11171 && code % 28 === 8;
+}
+
+/** 초급 범위 밖 문형 (3권 이상). 오탐이 적은 형태만 검사함 ('-(으)면'은 '그러면' 등과 구분이 어려워 제외) */
+const BEGINNER_REPLY_FORMS: { name: string; test: (s: string) => boolean }[] = [
+  { name: "'-군요'", test: (s) => /군요/.test(s) },
+  { name: "'N 때문에·-기 때문에'", test: (s) => /때문에/.test(s) },
+  { name: "'-겠-'(알겠습니다 제외)", test: (s) => /(?<!알)겠(?:습니다|어요|네요|지요|죠)/.test(s) },
+  { name: "'-(으)ㄹ게요'", test: (s) => [...s.matchAll(/(.)게요/g)].some((m) => endsWithRieul(m[1])) },
+  { name: "'-고 있다'", test: (s) => /\S고\s+있(?:어|습|었|는)/.test(s) },
+  { name: "'-(으)ㄹ 것 같다'", test: (s) => /것\s*같/.test(s) },
+  { name: "'-(으)ㄹ 거예요'", test: (s) => /거예요|겁니다/.test(s) },
+];
+
+/**
+ * 초급 상대역 발화가 초급 기준(docs/level-guide.md 1장)을 넘는지. 문제 목록(없으면 빈 배열)을 돌려줌.
+ * - 괄호 안("(도움말) …", "(대화를 마치려면 …)")은 빼고 검사
+ * - 한 번에 최대 2문장("네.", "죄송해요." 같은 한 마디는 세지 않음), 문장당 5어절
+ * - 3권 이상 문형, 위 단계 명사, 금지 어휘
+ * @param learnerSaid 학습자가 이미 쓴 말. 학습자가 먼저 쓴 낱말을 상대역이 받아 말하는 것은 허용
+ */
+export function beginnerReplyIssues(reply: string, learnerSaid: string[] = []): string[] {
+  const text = cleanDisplayContent(reply).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+  const issues: string[] = [];
+  const sentences = splitSentences(text);
+  const counted = sentences.filter((x) => !SHORT_FORMULA.test(x)).length;
+  if (counted > BEGINNER_MAX_SENTENCES) issues.push(`문장 수 초과(${counted}문장, 최대 ${BEGINNER_MAX_SENTENCES})`);
+  for (const s of sentences) {
+    const n = countEojeol(s);
+    if (n > BEGINNER_MAX_EOJEOL) issues.push(`어절 수 초과(${n}어절, 최대 ${BEGINNER_MAX_EOJEOL}): "${s}"`);
+  }
+  for (const f of BEGINNER_REPLY_FORMS) if (f.test(text)) issues.push(`초급 범위 밖 문형 ${f.name}`);
+  const learner = learnerSaid.join(' ');
+  for (const w of BEGINNER_BANNED_NOUNS) {
+    // 어절 첫머리에서만 찾음 (다른 낱말 안에 우연히 들어간 경우 제외)
+    if (new RegExp(`(?:^|\\s)${w}`).test(text) && !learner.includes(w)) issues.push(`위 단계 어휘 '${w}'`);
+  }
+  for (const w of ['경쟁력', '협력사', '납품', '분기', '예산 초과', '재발', '차질', '파악되']) if (text.includes(w)) issues.push(`금지 어휘 '${w}'`);
+  return issues;
+}

@@ -245,3 +245,36 @@ test('빈칸 뒤 고정 조사 로/으로도 힌트로 옮김', () => {
   assert.equal(f.template, '장소 문제는 {{1}} 해결할 예정입니다.');
   assert.equal(f.blanks[0].hint, '해결 방법 + (으)로');
 });
+
+describe('초급 상대역 발화 점검', async () => {
+  const { beginnerReplyIssues, BEGINNER_BANNED_NOUNS } = await import('../src/utils/meta.ts');
+  const { VOCAB } = await import('../api/_lib/level-rules.ts');
+  test('위 단계 명사 목록이 서버 VOCAB(중급·고급 명사)과 같음', () => {
+    assert.deepEqual(BEGINNER_BANNED_NOUNS, [...VOCAB.중급, ...VOCAB.고급].filter((w) => !w.endsWith('다')));
+  });
+  test('초급에 맞는 말은 통과', () => {
+    assert.deepEqual(beginnerReplyIssues('좋아요. 장소에 어떤 문제가 있어요?'), []);
+    assert.deepEqual(beginnerReplyIssues('네, 알겠습니다. 언제 보내요?'), []);
+    assert.deepEqual(beginnerReplyIssues('네, 한빛상사 최민수입니다.'), []);
+    assert.deepEqual(beginnerReplyIssues('시간이 없으니까 빨리 해요.'), []);
+  });
+  test('실제 검증에서 나온 문제 발화는 걸림', () => {
+    const issues = beginnerReplyIssues('네, 비용이 걱정되시는군요. 다른 방법도 있을까요?');
+    assert.ok(issues.some((i) => i.includes('-군요')));
+    assert.ok(issues.some((i) => i.includes("'방법'")));
+  });
+  test('문형: -(으)ㄹ게요, -겠-, -고 있다, 것 같다, 거예요, 때문에', () => {
+    for (const s of ['제가 확인할게요.', '내일 보내겠습니다.', '지금 보고서를 쓰고 있어요.', '늦을 것 같아요.', '내일 끝날 거예요.', '비 때문에 늦어요.']) {
+      assert.ok(beginnerReplyIssues(s).length > 0, s);
+    }
+  });
+  test('문장 수·어절 수 (괄호 안 안내와 한 마디 대답은 제외)', () => {
+    assert.ok(beginnerReplyIssues('좋아요. 그럼 언제 해요? 몇 시에 해요?').some((i) => i.includes('문장 수')));
+    assert.ok(beginnerReplyIssues('오늘 오후 세 시에 회의실에서 팀장님하고 다시 이야기해요.').some((i) => i.includes('어절 수')));
+    assert.deepEqual(beginnerReplyIssues('네. 좋아요. 언제 해요? (대화를 마치려면 \'피드백 받기\' 버튼을 눌러 주세요.)'), []);
+  });
+  test('학습자가 먼저 쓴 낱말은 상대역이 받아 말해도 됨', () => {
+    assert.ok(beginnerReplyIssues('출장은 언제 가요?').length > 0);
+    assert.deepEqual(beginnerReplyIssues('출장은 언제 가요?', ['목요일에 출장이 있어요.']), []);
+  });
+});
