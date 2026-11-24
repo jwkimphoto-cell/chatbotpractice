@@ -423,10 +423,10 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
           <div className="roleplay-summary-bar">
             <div className="summary-left">
               <span className="summary-title">🎬 {selectedScene.title}</span>
-              <span className="summary-divider">|</span>
-              <span className="summary-info"><strong>상대:</strong> {selectedScene.counterpart}</span>
-              <span className="summary-divider">|</span>
-              <span className="summary-info"><strong>목표:</strong> {selectedScene.goal}</span>
+              <span className="summary-divider summary-counterpart">|</span>
+              <span className="summary-info summary-counterpart"><strong>상대:</strong> {selectedScene.counterpart}</span>
+              <span className="summary-divider summary-goal-divider">|</span>
+              <span className="summary-info summary-goal" title={selectedScene.goal}><strong>목표:</strong> {selectedScene.goal}</span>
             </div>
             <div className="summary-right">
               <span className="summary-diff-badge">{difficulty}</span>
@@ -566,8 +566,10 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
               </button>
             </form>
             <div className="input-hint">
-              <span>대화 중 질문이나 도움이 필요하면 영어로 묻거나 "(도움말)"을 요청할 수 있습니다.</span>
-              <span>대화가 끝나면 <strong>[피드백 받기]</strong>를 눌러 표현과 보고 순서 피드백을 받으세요.</span>
+              <span className="input-hint-desktop">대화 중 질문이나 도움이 필요하면 영어로 묻거나 "(도움말)"을 요청할 수 있습니다.</span>
+              <span className="input-hint-desktop">대화가 끝나면 <strong>[피드백 받기]</strong>를 눌러 표현과 보고 순서 피드백을 받으세요.</span>
+              {/* 휴대폰(480px 이하)에서만 보이는 짧은 안내 */}
+              <span className="input-hint-mobile">끝나면 <strong>[피드백 받기]</strong>를 눌러 주세요.</span>
             </div>
           </div>
         </div>

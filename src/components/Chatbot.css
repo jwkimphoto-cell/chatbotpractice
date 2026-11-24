@@ -576,6 +576,11 @@
   justify-content: space-between;
 }
 
+/* 휴대폰용 짧은 안내는 넓은 화면에서 숨김 (480px 이하에서만 보임) */
+.input-hint-mobile {
+  display: none;
+}
+
 /* ==========================================================================
    상황 롤플레이 (RoleplayPractice) 스타일
    ========================================================================== */
@@ -2078,5 +2083,132 @@
   /* 375px: 보기 3개는 세로로 쌓음 */
   .support-choice-list {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 휴대폰(480px 이하): 도움 패널을 촘촘하게 하고 높이 상한을 낮춰 대화 영역을 더 남김.
+   패널은 남는 공간에 맞춰 줄어들고(최소 96px), 넘치는 내용은 패널 안에서 스크롤함
+   (줄어들지 않으면 요약 바·입력창과 합쳐 화면을 넘쳐 대화 영역이 최소 높이에 묶였음) */
+@media (max-width: 480px) {
+  .support-panel {
+    gap: 6px;
+    padding: 6px 8px;
+    max-height: 26vh;
+    min-height: 96px;
+    flex-shrink: 1;
+  }
+
+  .support-intent {
+    margin: 0;
+    font-size: 0.74rem;
+  }
+
+  .support-step {
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+
+  .support-step-title {
+    font-size: 0.76rem;
+    margin-bottom: 4px;
+  }
+
+  .support-frame-line {
+    font-size: 0.86rem;
+    line-height: 1.7;
+  }
+
+  .support-blank-input {
+    font-size: 0.86rem;
+  }
+
+  .support-choice-list {
+    gap: 4px;
+  }
+
+  .support-choice {
+    gap: 3px;
+    padding: 5px 8px;
+    font-size: 0.84rem;
+    border-radius: 8px;
+  }
+
+  .support-insert-btn {
+    margin-top: 4px;
+  }
+
+  .support-note {
+    margin-top: 2px;
+    font-size: 0.74rem;
+  }
+
+  .support-actions {
+    gap: 4px;
+  }
+
+  .support-panel .quick-chip {
+    padding: 3px 10px;
+    font-size: 0.74rem;
+  }
+}
+
+/* 휴대폰(480px 이하): 롤플레이 요약 바를 두 줄(제목·난이도·장면 변경 / 목표)로 줄이고,
+   입력창 아래 안내는 짧은 한 줄만 남김 (대화 영역을 넓히기 위함) */
+@media (max-width: 480px) {
+  .roleplay-summary-bar {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 6px 10px;
+  }
+
+  .summary-left {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 1px;
+    column-gap: 6px;
+  }
+
+  /* '상대'는 입력창 안내("김 팀장에게 할 말을…")에도 있어 휴대폰에서는 뺌 */
+  .summary-counterpart,
+  .summary-goal-divider {
+    display: none;
+  }
+
+  .summary-title,
+  .summary-goal {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .summary-title {
+    max-width: 100%;
+  }
+
+  /* 목표는 둘째 줄 한 줄로 (넘치면 말줄임) */
+  .summary-goal {
+    flex-basis: 100%;
+    font-size: 0.74rem;
+  }
+
+  .input-form-container {
+    padding: 8px 10px;
+  }
+
+  .input-hint {
+    margin-top: 4px;
+    font-size: 0.7rem;
+  }
+
+  .input-hint-desktop,
+  .input-hint-desktop-only {
+    display: none;
+  }
+
+  .input-hint-mobile {
+    display: inline;
   }
 }

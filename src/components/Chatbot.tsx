@@ -492,7 +492,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({
             전송
           </button>
         </form>
-        <div className="input-hint">
+        {/* 키보드·API 키 안내는 휴대폰(480px 이하)에서는 숨김 */}
+        <div className="input-hint input-hint-desktop-only">
           <span>엔터(Enter) 키로 전송하고 쉬프트+엔터(Shift+Enter)로 줄을 바꿉니다.</span>
           <span>API Key는 프런트엔드에 노출되지 않고 안전하게 서버에서 처리됩니다.</span>
         </div>
