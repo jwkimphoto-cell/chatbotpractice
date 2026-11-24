@@ -289,6 +289,14 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
           show(combined, [...f.issues, ...c.issues]);
           return;
         }
+        // 하나만 성공했으면 성공한 쪽만 보여 줌 (둘 다 구조 실패일 때만 오류)
+        const one = c && c.ok ? c : f.ok ? f : null;
+        if (one) {
+          console.warn(`[RoleplaySupport] 대체 경로: ${one.data.type}만 받아 그것만 표시`);
+          setOpened((o) => (o.includes(one.data.type as StepType) ? o : [...o, one.data.type as StepType]));
+          show(one.data, one.issues);
+          return;
+        }
       }
       setError({ kind: 'parse', type });
     } catch (e) {

@@ -230,6 +230,7 @@
 - 실패 두 종류 (fix-beginner-support에서 바꿈, 아래 옛 설명보다 우선):
   · 구조 실패(오류 처리): http, truncated, parse, schema, placeholder({{n}} 노출), replyTo 불일치, 내부 표시 노출(meta.ts internalMarkerField). 1회 다시 받고, 또 구조 실패면 starter는 대체 경로(frame·choices 따로), 그 밖의 종류는 오류. starter의 빈칸 개수·문장 끝 빈칸 오류는 다시 받지 않고 바로 대체 경로.
   · 난이도 실패(완화 처리): 어절·문장 수 초과, 초급 어휘·위 단계 명사·금지 어휘, 초급 범위 밖 문형(때문에·-군요·-아/어야 하다 등), 학습자 말 반복, '-ㅂ/습니다' 탓·쿠션어만 남은 문장(meta.ts supportDifficultyIssues). 버리지 않고 1회 다시 받은 뒤 두 결과 중 위반이 적은 쪽(같으면 나중)을 보여 주고 console.warn으로 위반을 남김. 오류 화면은 띄우지 않음.
+  · 대체 경로에서 문장 틀·보기 중 하나만 받아도 받은 쪽을 보여 줌.
   · "도움을 불러오지 못했어요."는 구조 실패가 이어져 보여 줄 결과가 없을 때(대체 경로 포함)만.
 - (옛 설명) 실패 분류와 재요청: http / level / repeat / length / truncated(닫는 [[/SUPPORT]] 없음 또는 괄호 불균형, 마커 없이 끊긴 JSON 포함) / parse / schema / placeholder / replyTo. placeholder·replyTo·level·repeat·length 실패와 frame·choices의 schema 실패는 자동으로 한 번 다시 요청하고, starter는 모든 실패를 한 번 다시 요청. starter가 2번 연속 실패하면 frame과 choices를 따로 1번씩 요청해 합침(대체 경로, 1회; choices 요청에는 먼저 받은 문장 틀을 frameTemplate으로 보내 정답 보기를 그 틀에 맞춤). 단, starter 첫 실패가 문장 틀의 빈칸 개수 오류나 빈칸이 문장 끝인 오류면 재요청 없이 바로 대체 경로로 감. 프롬프트는 빈칸을 명사 자리(날짜·요일·시간·이름·물건·장소·숫자)에만 두고 서술어·인사·사과·대답말 자리는 틀에 적게 함. 그래도 실패하면 "도움을 불러오지 못했어요. [다시 시도]"([다시 시도]는 그때의 최신 대화 기록으로 다시 보냄). 실패하면 개발 모드에서 console.warn으로 분류·supportType·마지막 상대역 발화·응답 앞 300자를 남기고, 화면에는 서버 오류 원문을 보이지 않음. 서버에는 출력 길이 제한(max_output_tokens)을 두지 않음.
 - 보기 선택 상태: 처음과 새 보기를 받을 때 선택 없음. 마우스를 올렸을 때는 배경만 살짝 바뀌고(선택처럼 보이는 파란 테두리 없음), 키보드 포커스 표시(:focus-visible)는 선택 상태 스타일과 분리.

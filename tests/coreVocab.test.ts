@@ -55,7 +55,7 @@ describe('장면 핵심 어휘(coreVocab)', () => {
     const sup = prompts.buildRoleplaySupportInstructions(scene, '초급', 'starter');
     assert.match(sup, /장면 핵심 어휘\(초급에서도 씀\): 미팅, 약속, 내일, 다음 주, 미루다, 죄송하다, 사정, 괜찮다/);
     assert.match(sup, /"장면 핵심 어휘"는 초급에서도 쓸 수 있습니다/);
-    assert.match(sup, /용건을 묻는 말.*intent를 장면 연습 목표의 첫 단계로/);
+    assert.match(sup, /용건을 묻는 말.*장면 연습 목표의 첫 단계부터 말하게 합니다.*intent에는 첫 단계/);
     assert.match(prompts.buildRoleplayPrompt(scene, '초급'), /장면 핵심 어휘\(초급에서도 씀\): 미팅/);
   });
 });
@@ -108,4 +108,13 @@ describe('구조 실패 / 난이도 실패 나누기', () => {
     assert.ok(beginnerSupportIssues(model('미팅을 미뤄야 해요.'), core('client-postpone')).some((i) => i.kind === 'form'));
     assert.deepEqual(beginnerSupportIssues(model('미팅을 미뤄요.'), core('client-postpone')), []);
   });
+});
+
+test('반말 보기의 "죄송해."도 한 마디 사과로 보고 문장 수에서 뺌', () => {
+  const opts = (c: string) => ({ type: 'choices' as const, replyTo: 'x', intent: '', intent_en: '', options: [
+    { id: 'A', text: '죄송해요. 내부 사정이 있어요. 미팅을 다음 주로 미루고 싶어요.', verdict: 'appropriate' as const, reason: 'r', reason_en: '' },
+    { id: 'B', text: '내부 사정이 있어요. 미팅을 다음 주로 미루고 싶어요. 죄송해요.', verdict: 'partial' as const, reason: 'r', reason_en: '' },
+    { id: 'C', text: c, verdict: 'inappropriate' as const, reason: 'r', reason_en: '' },
+  ] });
+  assert.deepEqual(beginnerSupportIssues(opts('죄송해. 내부 사정이 있어. 미팅을 다음 주로 미루고 싶어.'), SERVER_SCENES['client-postpone'].coreVocab), []);
 });

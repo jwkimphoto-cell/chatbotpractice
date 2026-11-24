@@ -67,8 +67,55 @@ const REPRO = [
   { role: 'user', content: '안녕하세요. 저는 미래전자 직원이에요.' },
   { role: 'assistant', content: '네, 안녕하세요. 무슨 일이세요?' },
 ];
+/** 화면(RoleplaySupportPanel.request)과 같은 흐름: 구조 실패와 난이도 실패를 나눠 처리하고, 학습자에게 보일 결과를 돌려줌 */
+async function appFlow(sceneId, history) {
+  const coreVocab = SERVER_SCENES[sceneId].coreVocab;
+  const learnerSaid = history.filter((m) => m.role === 'user').map((m) => m.content);
+  const target = history[history.length - 1].content;
+  const steps = [];
+  const once = async (type, frameTemplate) => {
+    const r = await api({ mode: 'roleplay_support', sceneId, level: '초급', supportType: type, messages: history, ...(frameTemplate ? { frameTemplate } : {}) });
+    if (r.status !== 200) { steps.push(`${type}: 구조 실패 http`); return { ok: false, kind: 'http' }; }
+    const parsed = meta.extractSupport(r.text, type);
+    if (!parsed.ok) { steps.push(`${type}: 구조 실패 ${parsed.kind} (${parsed.error})`); return { ok: false, kind: parsed.kind, error: parsed.error }; }
+    if (!meta.replyToMatches(parsed.data.replyTo, target)) { steps.push(`${type}: 구조 실패 replyTo`); return { ok: false, kind: 'replyTo' }; }
+    if (meta.internalMarkerField(parsed.data)) { steps.push(`${type}: 구조 실패 내부 표시`); return { ok: false, kind: 'internal' }; }
+    const issues = meta.supportDifficultyIssues(parsed.data, '초급', learnerSaid, coreVocab);
+    steps.push(`${type}: 구조 통과, 난이도 위반 ${issues.length}건${issues.length ? ' — ' + issues.join(' / ') : ''}`);
+    return { ok: true, data: parsed.data, issues };
+  };
+  let best = null;
+  const r1 = await once('starter');
+  if (r1.ok) best = { data: r1.data, issues: r1.issues };
+  const skipRetry = !r1.ok && r1.kind === 'schema' && /빈칸 개수|빈칸이 문장 끝/.test(r1.error ?? '');
+  if (!skipRetry && (!r1.ok || r1.issues.length > 0)) {
+    const r2 = await once('starter');
+    if (r2.ok) best = meta.pickLessDifficult(best, { data: r2.data, issues: r2.issues });
+  }
+  if (!best) {
+    const f = await once('frame');
+    const c = f.ok ? await once('choices', f.data.template) : null;
+    if (f.ok && c && c.ok) {
+      const answer = c.data.options.find((o) => o.verdict === 'appropriate')?.text ?? '';
+      best = { data: { type: 'starter', replyTo: f.data.replyTo, intent: f.data.intent || c.data.intent, frame: meta.alignFrameWithAnswer(f.data, answer).frame, choices: { options: c.data.options } }, issues: [...f.issues, ...c.issues] };
+      steps.push('대체 경로로 표시');
+    } else if ((c && c.ok) || f.ok) {
+      const one = c && c.ok ? c : f;
+      best = { data: one.data, issues: one.issues };
+      steps.push(`대체 경로: ${one.data.type}만 표시`);
+    }
+  }
+  return { shown: best ? '도움 표시' : '도움을 불러오지 못했어요.', remainingIssues: best?.issues ?? null, steps, ...brief(best?.data) };
+}
+
 const out = [];
 try {
+  if (mode === 'app') {
+    for (let i = 1; i <= Number(args.n ?? 2); i++) out.push({ id: `client-postpone-repro-${i}`, ...(await appFlow('client-postpone', REPRO)) });
+    if (args.scenes) {
+      for (const id of String(args.scenes).split(',')) out.push({ id: `${id}-opening`, ...(await appFlow(id, [{ role: 'assistant', content: SERVER_SCENES[id].openingLineBeginner }])) });
+    }
+  }
   if (mode === 'repro' || mode === 'verify') {
     const n = Number(args.n ?? 3);
     for (let i = 1; i <= n; i++) {
