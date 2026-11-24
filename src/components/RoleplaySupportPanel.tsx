@@ -6,7 +6,9 @@ import {
   koreanInEnglishFields,
   extractSupport,
   normalizeUtterance,
+  repeatsLearner,
   replyToMatches,
+  supportLengthIssue,
   type SupportChoiceOption,
   type SupportChoicesBody,
   type SupportData,
@@ -16,6 +18,7 @@ import {
   type SupportFailKind,
   type SupportVerdict,
 } from '../utils/meta';
+import { choiceState } from '../utils/chatState';
 
 /**
  * 롤플레이 도움 사다리 패널 (💡 방향 힌트 → ✏️ 문장 틀 → 🔘 보기 선택 → 👀 모범 답)
@@ -71,10 +74,11 @@ interface Results {
 
 type ErrorKind = 'parse' | 'rate';
 /** 실패 분류 (개발 모드 로그용) */
-type FailKind = 'http' | 'replyTo' | 'level' | SupportFailKind;
-type FetchResult = { ok: true; data: SupportData } | { ok: false; kind: FailKind; error?: string } | { ok: false; kind: 'skip' };
-/** 자동으로 한 번 다시 요청하는 실패 (starter는 모든 실패를 다시 요청) */
-const RETRY_KINDS: FailKind[] = ['placeholder', 'replyTo', 'level'];
+type FailKind = 'http' | 'replyTo' | 'level' | 'repeat' | 'length' | SupportFailKind;
+/** soft: 길이만 넘은 중급·고급 도움. 다시 요청해도 넘으면 버리지 않고 보여 줌 (화면 안정성 우선) */
+type FetchResult = { ok: true; data: SupportData } | { ok: false; kind: FailKind; error?: string; soft?: SupportData } | { ok: false; kind: 'skip' };
+/** 자동으로 한 번 다시 요청하는 실패 (starter는 모든 실패를 다시 요청, frame·choices는 구조 오류도 다시 요청) */
+const RETRY_KINDS: FailKind[] = ['placeholder', 'replyTo', 'level', 'repeat', 'length'];
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -193,6 +197,19 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
       logFail('level', type, last.content, reply, issue);
       return { ok: false, kind: 'level' };
     }
+    // 학습자가 이미 말한 문장을 다시 넣은 도움 (대답 대상 규칙 위반)
+    const learnerSaid = history.filter((m) => m.role === 'user').map((m) => m.content);
+    const repeat = repeatsLearner(parsed.data, learnerSaid);
+    if (repeat) {
+      logFail('repeat', type, last.content, reply, repeat);
+      return { ok: false, kind: 'repeat' };
+    }
+    // 중급·고급: 문장당 최대 어절
+    const long = isBeginner ? null : supportLengthIssue(parsed.data, level);
+    if (long) {
+      logFail('length', type, last.content, reply, long);
+      return { ok: false, kind: 'length', soft: parsed.data };
+    }
     // 영어 칸의 한글: 실패로 처리하지 않고 기록만 (개발 모드)
     const koInEn = isBeginner ? koreanInEnglishFields(parsed.data) : [];
     if (koInEn.length > 0 && import.meta.env.DEV) console.warn('[RoleplaySupport] 영어 칸에 한글이 섞임 (표시는 그대로)', koInEn);
@@ -220,9 +237,14 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
       const skipRetry =
         type === 'starter' && !r.ok && r.kind === 'schema' && 'error' in r && /빈칸 개수|빈칸이 문장 끝/.test(r.error ?? '');
       if (skipRetry) console.info('[RoleplaySupport] starter 문장 틀 빈칸 오류 → 재요청 없이 대체 경로로');
-      if (!r.ok && r.kind !== 'skip' && !skipRetry && (type === 'starter' || RETRY_KINDS.includes(r.kind))) {
-        console.info(`[RoleplaySupport] ${type} 실패(${r.kind}) → 한 번 다시 요청`);
+      const retryable = !r.ok && r.kind !== 'skip' && (RETRY_KINDS.includes(r.kind) || type === 'starter' || ((type === 'frame' || type === 'choices') && r.kind === 'schema'));
+      if (retryable && !skipRetry) {
+        console.info(`[RoleplaySupport] ${type} 실패(${r.ok ? '' : r.kind}) → 한 번 다시 요청`);
+        const first = r;
         r = await fetchOnce(type);
+        // 두 번 모두 길이만 넘었으면 버리지 않고 마지막 결과를 보여 줌
+        if (!r.ok && r.kind === 'length' && 'soft' in r && r.soft) r = { ok: true, data: r.soft };
+        else if (!r.ok && r.kind !== 'skip' && !first.ok && first.kind === 'length' && 'soft' in first && first.soft && r.kind !== 'replyTo') r = { ok: true, data: first.soft };
       }
       if (r.ok) {
         cache.set(cacheKey, r.data);
@@ -362,15 +384,14 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
   };
 
   const renderChoices = () => {
-    const wrongCount = picked.filter((id) => choiceOrder.find((o) => o.id === id)?.verdict !== 'appropriate').length;
     const correct = choiceOrder.find((o) => o.verdict === 'appropriate');
-    const pickedCorrect = correct ? picked.includes(correct.id) : false;
+    const { pickedCorrect, highlightCorrect, canInsert } = choiceState(choiceOrder, picked);
     return (
       <>
         <div className="support-choice-list" role="group" aria-label="보기 선택">
           {choiceOrder.map((o, idx) => {
             const chosen = picked.includes(o.id);
-            const highlight = !pickedCorrect && wrongCount >= 2 && o.verdict === 'appropriate';
+            const highlight = highlightCorrect && o.verdict === 'appropriate';
             return (
               <button
                 key={o.id}
@@ -396,14 +417,14 @@ export const RoleplaySupportPanel: React.FC<Props> = ({
             );
           })}
         </div>
-        {!pickedCorrect && wrongCount >= 2 && (
+        {highlightCorrect && (
           <p className="support-note">정답 보기를 표시했어요.{isBeginner ? ' (The best answer is highlighted.)' : ''}</p>
         )}
         <button
           type="button"
           className="quick-chip support-insert-btn"
           aria-label="고른 보기를 입력창에 넣기"
-          disabled={busy || !pickedCorrect || !correct}
+          disabled={busy || !canInsert || !correct}
           onClick={() => correct && onInsert(correct.text, 'choices')}
         >
           입력창에 넣기

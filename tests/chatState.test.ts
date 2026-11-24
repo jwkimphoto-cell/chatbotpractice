@@ -46,3 +46,11 @@ describe('도움 사용 기록 블록', () => {
     assert.doesNotMatch(buildUsageBlock(u, 2), /직접 쓴 발화: 없음/);
   });
 });
+
+test('직접 쓴 발화가 있으면 수를 적음 (도움으로 시작한 발화가 없어도)', () => {
+  const u = emptyUsage();
+  u.counts.hint = 1;
+  const block = buildUsageBlock(u, 2);
+  assert.match(block, /직접 쓴 발화: 2개/);
+  assert.doesNotMatch(block, /직접 쓴 발화: 없음/);
+});

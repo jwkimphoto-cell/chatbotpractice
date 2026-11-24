@@ -54,6 +54,12 @@ export async function streamChatMessage(
   onDelta: (chunk: string) => void,
   options?: StreamChatOptions,
 ): Promise<string> {
+  // 개발 전용 가짜 응답 모드 (?mock=1): API를 호출하지 않고 화면 흐름을 확인. 배포 빌드에서는 이 분기가 제거됨
+  if (import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).get('mock') === '1') {
+    const { mockStreamChat } = await import('./mockChat');
+    return mockStreamChat(messages, onDelta, options);
+  }
+
   const payload: {
     messages: ChatMessage[];
     mode?: ChatMode;

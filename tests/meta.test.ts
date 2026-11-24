@@ -213,3 +213,35 @@ describe('어절 수 세기', () => {
   ];
   for (const [s, n] of cases) test(`"${s}" → ${n}`, () => assert.equal(countEojeol(s), n));
 });
+
+describe('정비 1회차에서 추가한 점검', async () => {
+  const { supportLengthIssue, repeatsLearner, extractSupport: ex } = await import('../src/utils/meta.ts');
+  const model = (text: string) => ({ type: 'model' as const, replyTo: 'x', intent: '', intent_en: '', text, text_en: '', tip: 't', tip_en: '' });
+  test('중급·고급 도움 문장 최대 어절', () => {
+    assert.match(supportLengthIssue(model('네, SNS 광고는 젊은 고객에게 더 잘 맞을 것 같아요.'), '중급') ?? '', /어절 수 초과/);
+    assert.equal(supportLengthIssue(model('젊은 고객에게 더 맞을 것 같아요.'), '중급'), null);
+  });
+  test('학습자가 이미 말한 문장 반복', () => {
+    assert.match(repeatsLearner(model('장소에 문제가 있어요. 방이 작아요.'), ['장소에 문제가 하나 있어요.', '장소에 문제가 있어요.']) ?? '', /반복/);
+    assert.equal(repeatsLearner(model('네. 방이 작아요.'), ['네.']), null);
+  });
+  test('중급·고급 hint의 steps_en이 빈 배열이어도 받음', () => {
+    const r = ex('[[SUPPORT]]{"type":"hint","replyTo":"x","steps":["a","b"],"steps_en":[]}[[/SUPPORT]]', 'hint');
+    assert.equal(r.ok, true);
+  });
+  test('한 보기 안의 같은 문장 반복은 schema', () => {
+    const opts = [
+      { id: 'A', text: '행사를 해요.', verdict: 'appropriate', reason: 'r' },
+      { id: 'B', text: '행사를 해요. 행사를 해요.', verdict: 'partial', reason: 'r' },
+      { id: 'C', text: '행사를 해.', verdict: 'inappropriate', reason: 'r' },
+    ];
+    assert.equal(typeof validateChoices({ options: opts }), 'string');
+  });
+});
+
+test('빈칸 뒤 고정 조사 로/으로도 힌트로 옮김', () => {
+  const f = validateFrame({ template: '장소 문제는 {{1}}로 해결할 예정입니다.', blanks: [{ id: 1, hint: '해결 방법', hint_en: '' }] });
+  assert.ok(typeof f === 'object');
+  assert.equal(f.template, '장소 문제는 {{1}} 해결할 예정입니다.');
+  assert.equal(f.blanks[0].hint, '해결 방법 + (으)로');
+});

@@ -485,8 +485,9 @@ export function normalizeBlankHint(template: string, blank: SupportBlank, partic
   return { ...blank, hint: `${hint || blank.hint} + 이/가`, hint_en: hintEn };
 }
 
-const PARTICLE_PAIR: Record<string, string> = { 이: '이/가', 가: '이/가', 을: '을/를', 를: '을/를', 은: '은/는', 는: '은/는', 과: '과/와', 와: '과/와' };
-const P2 = '\\(?(이|가|을|를|은|는|과|와)\\)?';
+const PARTICLE_PAIR: Record<string, string> = { 이: '이/가', 가: '이/가', 을: '을/를', 를: '을/를', 은: '은/는', 는: '은/는', 과: '과/와', 와: '과/와', 로: '(으)로', 으로: '(으)로' };
+// '로/으로'도 받침에 따라 바뀜 ("{{1}}로 해결" + '계약 변경' → '변경로' ×)
+const P2 = '\\(?(으로|이|가|을|를|은|는|과|와|로)\\)?';
 /** 빈칸 바로 뒤의 고정 조사 (한 형태, "이/가"처럼 두 형태, "(이)" 모두). 뒤에는 공백·문장부호·끝이 와야 함 ("{{1}}이에요"는 해당 없음) */
 const FIXED_PARTICLE_AFTER_BLANK = new RegExp(`\\{\\{(\\d+)\\}\\}${P2}(?:\\s*/\\s*\\(?(?:이|가|을|를|은|는|과|와)\\)?)?(?=[\\s.,!?)]|$)`, 'g');
 
@@ -546,6 +547,12 @@ export function validateChoices(v: unknown): SupportChoicesBody | string {
   }
   // 문장이 똑같은 보기가 둘 이상이면 학습자가 고를 수 없음 (공백·문장부호만 다른 것도 같은 문장으로 봄)
   if (new Set(options.map((o) => normalizeUtterance(o.text))).size !== options.length) return '문장이 똑같은 보기가 있음';
+  // 한 보기 안에서 같은 문장을 두 번 쓴 보기 (예: "행사를 해요. 행사를 해요.") — 실제로 쓰지 않는 말
+  const repeated = options.find((o) => {
+    const parts = splitSentences(o.text).map(normalizeUtterance).filter(Boolean);
+    return new Set(parts).size !== parts.length;
+  });
+  if (repeated) return `한 보기 안에 같은 문장이 반복됨: "${repeated.text}"`;
   const count = (vd: SupportVerdict) => options.filter((o) => o.verdict === vd).length;
   if (count('appropriate') !== 1 || count('partial') !== 1 || count('inappropriate') !== 1) {
     return 'verdict 구성이 appropriate·partial·inappropriate 각 1개가 아님';
@@ -682,7 +689,8 @@ function extractSupportInner(text: string, expected: SupportKind): InnerResult {
     }
     const steps = (p.steps as string[]).map((x) => x.trim());
     let stepsEn: string[];
-    if (p.steps_en === undefined) stepsEn = steps.map(() => '');
+    // 중급·고급은 영어 칸을 비우므로 steps_en이 없거나 빈 배열·빈 문자열이어도 받음
+    if (p.steps_en === undefined || p.steps_en === '' || (Array.isArray(p.steps_en) && p.steps_en.length === 0)) stepsEn = steps.map(() => '');
     else if (Array.isArray(p.steps_en) && p.steps_en.length === steps.length) stepsEn = p.steps_en.map((x) => asStr(x).trim());
     else return { ok: false, error: 'steps_en 개수가 steps와 다름' };
     return { ok: true, data: { ...meta, type: 'hint', steps, steps_en: stepsEn } };
@@ -708,4 +716,41 @@ function extractSupportInner(text: string, expected: SupportKind): InnerResult {
   const c = validateChoices(p.choices);
   if (typeof c === 'string') return { ok: false, error: `starter.choices: ${c}` };
   return { ok: true, data: { ...meta, type: 'starter', frame: f, choices: c } };
+}
+
+/** 도움 문장 목록 (문장 틀은 빈칸을 한 어절로 바꿔 셈) */
+function supportSentences(data: SupportData): string[] {
+  if (data.type === 'starter') return [data.frame.template.replace(/\{\{\d+\}\}/g, '빈칸'), ...data.choices.options.map((o) => o.text)];
+  if (data.type === 'frame') return [data.template.replace(/\{\{\d+\}\}/g, '빈칸')];
+  if (data.type === 'choices') return data.options.map((o) => o.text);
+  if (data.type === 'model') return [data.text];
+  return [];
+}
+
+const LEVEL_MAX_EOJEOL: Record<string, number> = { 초급: 5, 중급: 7, 고급: 8 };
+
+/** 중급·고급 도움 문장 길이 점검 (문장당 최대 어절, docs/level-guide.md 1-2). 넘으면 이유, 아니면 null */
+export function supportLengthIssue(data: SupportData, level: string): string | null {
+  const max = LEVEL_MAX_EOJEOL[level];
+  if (!max) return null;
+  for (const t of supportSentences(data)) {
+    const long = splitSentences(t).find((x) => countEojeol(x) > max);
+    if (long) return `어절 수 초과(${countEojeol(long)}어절, 최대 ${max}): "${long}"`;
+  }
+  return null;
+}
+
+/**
+ * 학습자가 이미 말한 문장을 도움 문장(문장 틀·정답 보기·모범 답)에 다시 넣었는지.
+ * 짧은 대답("네.", "좋아요.")은 겹쳐도 괜찮으므로 정규화 후 6자 이상인 문장만 봄
+ */
+export function repeatsLearner(data: SupportData, learnerSaid: string[]): string | null {
+  const said = learnerSaid.flatMap((t) => splitSentences(t)).map(normalizeUtterance).filter((x) => x.length >= 6);
+  if (said.length === 0) return null;
+  const answer = data.type === 'starter' ? data.choices.options.find((o) => o.verdict === 'appropriate')?.text ?? ''
+    : data.type === 'choices' ? data.options.find((o) => o.verdict === 'appropriate')?.text ?? '' : '';
+  const own = [...(data.type === 'starter' || data.type === 'frame' ? supportSentences(data).slice(0, 1) : []), answer, data.type === 'model' ? data.text : '']
+    .flatMap((t) => splitSentences(t)).map(normalizeUtterance).filter(Boolean);
+  const hit = own.find((x) => said.includes(x));
+  return hit ? `학습자가 이미 말한 문장을 반복: "${hit}"` : null;
 }

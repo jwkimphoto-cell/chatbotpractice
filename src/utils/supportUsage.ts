@@ -40,5 +40,10 @@ export function buildUsageBlock(u: SupportUsage, userTurns: number): string {
   // 학습자 발화가 모두 도움 문장을 그대로 보낸 것이면, 모델이 바로 앞에서 읽도록 끝에 명시
   const allVerbatim = userTurns > 0 && u.helped.length === userTurns && u.helped.every((h) => !h.modified);
   if (allVerbatim) lines.push('직접 쓴 발화: 없음 (잘한 점에 발화를 인용하지 말 것)');
+  else {
+    // 직접 쓴 발화가 있으면 그 수를 분명히 적음 (모델이 "도움으로 시작한 발화: 없음"을 "직접 쓴 발화 없음"으로 잘못 읽은 사례가 있었음)
+    const direct = Math.max(0, userTurns - u.helped.filter((h) => !h.modified).length);
+    lines.push(`직접 쓴 발화: ${direct}개 (이 발화들은 평소처럼 피드백함)`);
+  }
   return `\n\n[도움 사용 기록]\n${lines.join('\n')}`;
 }

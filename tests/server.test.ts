@@ -108,3 +108,9 @@ describe('다음 세트 문형 선택', () => {
     assert.equal(parseMoreRequest('퀴즈 시작'), null);
   });
 });
+
+test('첫 세트도 서버가 그 주제 목록의 문형 3개를 지정함', async () => {
+  const { buildStartInstruction } = await import('../api/_lib/patterns.ts');
+  const text = buildStartInstruction({ topic: '회의', level: '고급' });
+  assert.match(text, /1\. V-\(으\)ㄹ까 하다\n2\. V-지 말고\n3\. A\/V-기는 하지만/);
+});

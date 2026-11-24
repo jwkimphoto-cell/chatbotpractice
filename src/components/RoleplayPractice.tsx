@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { streamChatMessage, type ChatMessage, type RoleplayLevel } from '../api/chat';
 import { SCENES, type SceneCardData } from '../data/scenes';
-import { cleanDisplayContent, extractNotes, shortHash, stripMetaForHistory, type ParsedNoteItem, type SupportData } from '../utils/meta';
+import { cleanDisplayContent, extractNotes, shortHash, type ParsedNoteItem, type SupportData } from '../utils/meta';
 import { addNotes } from '../utils/notesStorage';
 import { FormattedMessage } from './FormattedMessage';
 import { RoleplaySupportPanel, type InsertSource, type StepType } from './RoleplaySupportPanel';
 import type { SupportVerdict } from '../utils/meta';
 import { buildUsageBlock, emptyUsage, type SupportUsage } from '../utils/supportUsage';
+import { buildRoleplayPayload, supportPanelState } from '../utils/chatState';
 
 interface DisplayMessage extends ChatMessage {
   id: string;
@@ -160,10 +161,7 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
 
     try {
       // 서버 재전송용 메시지: 메타 블록을 제거한 순수 대화 기록만 전달
-      const apiPayload: ChatMessage[] = newMessages.map((m) => ({
-        role: m.role,
-        content: stripMetaForHistory(m.apiContent ?? m.content),
-      }));
+      const apiPayload: ChatMessage[] = buildRoleplayPayload(newMessages);
 
       const reply = await streamChatMessage(
         apiPayload,
@@ -209,19 +207,15 @@ export const RoleplayPractice: React.FC<RoleplayPracticeProps> = ({
 
   // ---------- 도움 사다리 연결 ----------
   // 상대역 발화 번호(turnIndex): 다 받은 상대역 메시지 수. 바뀌면 패널을 새로 마운트(이전 턴 도움 숨김)
-  const completedAssistant = messages.filter((m) => m.role === 'assistant' && m.id !== streamingId && m.content.trim() !== '');
-  const turnIndex = completedAssistant.length;
-  const lastMsg = messages[messages.length - 1];
-  const lastIsAssistant = !!lastMsg && lastMsg.role === 'assistant' && lastMsg.id !== streamingId && lastMsg.content.trim() !== '';
   // 도움 요청에 보낼 대화 기록: 실제 대화(학습자 말 + 상대역 말)만, 메타 블록 제거
-  const supportHistory: ChatMessage[] = messages
-    .filter((m) => m.id !== streamingId && m.content.trim() !== '')
-    .map((m) => ({ role: m.role, content: stripMetaForHistory(m.apiContent ?? m.content) }));
-  // 상대역 응답 스트리밍이 완전히 끝나고(isLoading false) 마지막 상대역 말이 비어 있지 않을 때만 패널을 보여 줌
-  const showSupportPanel = stage === 'chat' && !feedbackRequested && lastIsAssistant && !isLoading;
-  // 학습자가 말을 보낸 뒤 다음 상대역 발화가 끝날 때까지: 이전 턴 도움은 지우고 준비 중 안내만 보여 줌
-  const showSupportWaiting = stage === 'chat' && !feedbackRequested && !showSupportPanel && isLoading && hasUserTurn;
-  const supportTarget = lastIsAssistant ? stripMetaForHistory(lastMsg.content) : '';
+  const supportHistory: ChatMessage[] = buildRoleplayPayload(messages, streamingId);
+  // 상대역 응답 스트리밍이 완전히 끝나고 마지막 상대역 말이 비어 있지 않을 때만 패널, 학습자가 말을 보낸 뒤에는 준비 중 안내만
+  const {
+    showPanel: showSupportPanel,
+    showWaiting: showSupportWaiting,
+    target: supportTarget,
+    turnIndex,
+  } = supportPanelState({ stage, feedbackRequested, isLoading, streamingId, messages });
   const supportTurnKey = `${sessionId}-${turnIndex}-${shortHash(supportTarget)}`;
 
   // 자식 패널의 useEffect(마운트 시 starter 요청)보다 먼저 실행되도록 layout effect에서 최신 기록을 ref에 넣음
