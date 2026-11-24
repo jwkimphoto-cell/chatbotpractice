@@ -7,7 +7,6 @@ import {
   LEVEL_RULES,
   LEVELS,
   PRAGMATIC_GRADING_RULES,
-  VOCAB,
 } from './level-rules.js';
 
 /**
@@ -267,7 +266,9 @@ const BEGINNER_SIMPLIFY_NOTE = `
 - 같은 차례의 상대역 말을 다시 만듭니다. 앞서 만든 말이 초급 기준을 넘었습니다.
 - 1~2문장, 문장마다 5어절 이하로 씁니다.
 - 1·2권 문형만 씁니다. '-군요', '-겠-'(알겠습니다는 허용), '-(으)ㄹ게요', '-고 있다', '-(으)ㄹ 것 같다', '-(으)ㄹ 거예요', 'N 때문에'는 쓰지 않습니다.
-- 초급 어휘로 말합니다. 학습자가 먼저 쓰지 않은 중급·고급 명사(${[...VOCAB.중급, ...VOCAB.고급].filter((w) => !w.endsWith('다')).join(', ')})는 쉬운 말로 바꿉니다.
+- 초급 어휘로 말합니다. 장면 설정이나 연습 목표의 어려운 낱말을 옮기지 말고, 무엇을 묻고 싶은지를 쉬운 질문 꼴로 말합니다.
+  · 쉬운 질문 꼴: "뭐가 좋아요?", "다른 것도 있어요?", "왜요?", "언제 해요?", "어디에서 해요?", "얼마나 걸려요?"
+  · 질문 꼴은 필요하면 앞 문장에 맞게 낱말을 바꿔 씁니다.
 - 이 안내는 학습자에게 보이지 않으며, 응답에서 언급하지 않습니다.`;
 
 export function buildRoleplayPrompt(scene: ServerScene, level: RoleplayLevel, simplify = false): string {

@@ -122,6 +122,9 @@ test('초급 다시 말하기 안내는 simplify일 때만, 고정 문구로 붙
   assert.doesNotMatch(prompts.buildRoleplayPrompt(scene, '초급'), /\[다시 말하기/);
   const text = prompts.buildRoleplayPrompt(scene, '초급', true);
   assert.match(text, /\[다시 말하기 \(서버 안내\)\]/);
-  assert.match(text, /방법, 의견/);
+  // 금지 명사 목록을 적으면 오히려 그 낱말을 떠올리게 해서 빼고, 쉬운 질문 꼴을 알려 줌
+  const note = text.split('[다시 말하기 (서버 안내)]')[1];
+  for (const w of ['방법', '의견', '일정', '고객']) assert.ok(!note.includes(w), `안내에 "${w}"`);
+  assert.match(note, /쉬운 질문 꼴: "뭐가 좋아요\?"/);
   assert.doesNotMatch(prompts.buildRoleplayPrompt(scene, '중급', true), /\[다시 말하기/);
 });
